@@ -147,6 +147,49 @@ it("returns deterministic recommendations and persists resource completion", asy
     payload: { done: false },
   });
 });
+it("allows session history corrections to shorten or remove recorded segments only", async () => {
+  const writeHeaders = {
+    ...headers,
+    origin: "http://127.0.0.1:4317",
+    "x-synapse": "1",
+    "content-type": "application/json",
+  };
+  const started = await ctx.app.inject({
+    method: "POST",
+    url: "/api/sessions",
+    headers: writeHeaders,
+    payload: {},
+  });
+  const session = started.json();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  await ctx.app.inject({
+    method: "POST",
+    url: `/api/sessions/${session.id}/stop`,
+    headers: writeHeaders,
+    payload: {},
+  });
+  const record = (await ctx.app.inject({ url: "/api/sessions", headers }))
+    .json()
+    .find((item: { id: string }) => item.id === session.id);
+  const segment = record.segments[0] as {
+    id: number;
+    started_at: number;
+    ended_at: number;
+  };
+  const trim = (body: object) =>
+    ctx.app.inject({
+      method: "POST",
+      url: `/api/sessions/${session.id}/segments/${segment.id}/trim`,
+      headers: writeHeaders,
+      payload: body,
+    });
+  expect((await trim({ startAt: segment.started_at + 1 })).statusCode).toBe(
+    200,
+  );
+  expect((await trim({ startAt: segment.started_at })).statusCode).toBe(422);
+  expect((await trim({ delete: true })).statusCode).toBe(422);
+  expect((await trim({ delete: true, confirm: true })).statusCode).toBe(200);
+});
 it("checks hosts and origins before handlers run", async () => {
   expect(
     (

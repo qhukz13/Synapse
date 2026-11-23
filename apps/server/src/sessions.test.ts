@@ -129,4 +129,44 @@ describe("persistent study sessions", () => {
     h.service.close();
     h.db.close();
   });
+  it("permits only shortened session corrections and audits removed intervals", () => {
+    const h = harness();
+    const session = h.service.start(null)!;
+    h.advance(120_000);
+    h.service.action(session.id, "stop");
+    const original = h.db
+      .prepare("SELECT * FROM session_segment WHERE session_id=?")
+      .get(session.id) as { id: number; started_at: number; ended_at: number };
+    const shortened = h.service.trimSegment(session.id, original.id, {
+      startAt: original.started_at + 10_000,
+      endAt: original.ended_at - 30_000,
+    });
+    expect(shortened).toMatchObject({
+      started_at: original.started_at + 10_000,
+      ended_at: original.ended_at - 30_000,
+    });
+    expect(() =>
+      h.service.trimSegment(session.id, original.id, {
+        startAt: original.started_at,
+      }),
+    ).toThrow(/only shorten/);
+    expect(h.service.stats().totalMs).toBe(80_000);
+    expect(() =>
+      h.service.trimSegment(session.id, original.id, { delete: true }),
+    ).toThrow(/Confirm removal/);
+    h.service.trimSegment(session.id, original.id, {
+      delete: true,
+      confirm: true,
+    });
+    expect(h.service.stats().totalMs).toBe(0);
+    expect(
+      h.db
+        .prepare(
+          "SELECT COUNT(*) AS count FROM session_audit WHERE session_id=? AND action='trim'",
+        )
+        .get(session.id),
+    ).toMatchObject({ count: 2 });
+    h.service.close();
+    h.db.close();
+  });
 });

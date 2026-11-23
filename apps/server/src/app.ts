@@ -375,4 +375,31 @@ function registerSessions({ app, nid, sessions }: Context) {
       return sessions.restoreIdle(req.params.id, segmentId);
     },
   );
+  app.post<{ Params: { id: string; segmentId: string } }>(
+    "/api/sessions/:id/segments/:segmentId/trim",
+    (req) => {
+      const segmentId = z.coerce
+        .number()
+        .int()
+        .positive()
+        .parse(req.params.segmentId);
+      const patch = z
+        .object({
+          startAt: z.number().int().optional(),
+          endAt: z.number().int().optional(),
+          delete: z.boolean().optional(),
+          confirm: z.boolean().optional(),
+        })
+        .strict()
+        .refine(
+          (value) =>
+            value.delete === true ||
+            value.startAt !== undefined ||
+            value.endAt !== undefined,
+          "Choose a shorter interval or remove the segment.",
+        )
+        .parse(req.body);
+      return sessions.trimSegment(req.params.id, segmentId, patch);
+    },
+  );
 }

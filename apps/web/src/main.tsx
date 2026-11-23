@@ -454,7 +454,132 @@ type SessionRecord = {
   topic_title: string | null;
   durationMs: number;
   note: string | null;
+  segments: {
+    id: number;
+    started_at: number;
+    ended_at: number | null;
+    close_reason: string | null;
+  }[];
 };
+function SessionSegmentCorrection({
+  sessionId,
+  segment,
+}: {
+  sessionId: string;
+  segment: SessionRecord["segments"][number];
+}) {
+  const [seconds, setSeconds] = useState(1),
+    [message, setMessage] = useState(""),
+    [busy, setBusy] = useState(false);
+  const available =
+    segment.ended_at === null
+      ? 0
+      : Math.max(
+          0,
+          Math.floor((segment.ended_at - segment.started_at - 1) / 1000),
+        );
+  const correctionSeconds = Math.min(seconds, Math.max(1, available));
+  const mutate = async (patch: {
+    startAt?: number;
+    endAt?: number;
+    delete?: boolean;
+    confirm?: boolean;
+  }) => {
+    setBusy(true);
+    setMessage("");
+    try {
+      const response = await fetch(
+        `/api/sessions/${sessionId}/segments/${segment.id}/trim`,
+        {
+          method: "POST",
+          headers: { "x-synapse": "1", "content-type": "application/json" },
+          body: JSON.stringify(patch),
+        },
+      );
+      if (!response.ok)
+        throw Error(
+          (await response.json()).message ?? "Correction could not be saved.",
+        );
+      setMessage(
+        patch.delete
+          ? "Segment removed from recorded study time."
+          : "Recorded interval shortened.",
+      );
+      await client.invalidateQueries({ queryKey: ["sessions"] });
+      await client.invalidateQueries({ queryKey: ["stats/study"] });
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Correction failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="segment-correction">
+      <span>
+        {new Date(segment.started_at).toLocaleTimeString()} –{" "}
+        {segment.ended_at === null
+          ? "still running"
+          : new Date(segment.ended_at).toLocaleTimeString()}{" "}
+        · {segment.close_reason ?? "active"}
+      </span>
+      {segment.ended_at !== null && (
+        <div className="segment-correction-actions">
+          <label>
+            Seconds to remove{" "}
+            <input
+              type="number"
+              min={1}
+              max={available}
+              step={1}
+              value={correctionSeconds}
+              disabled={!available || busy}
+              onChange={(event) =>
+                setSeconds(Math.max(1, Number(event.target.value) || 1))
+              }
+            />
+          </label>
+          <button
+            type="button"
+            disabled={!available || busy}
+            onClick={() =>
+              void mutate({
+                startAt: segment.started_at + correctionSeconds * 1000,
+              })
+            }
+          >
+            Trim from start
+          </button>
+          <button
+            type="button"
+            disabled={!available || busy}
+            onClick={() =>
+              void mutate({
+                endAt: segment.ended_at! - correctionSeconds * 1000,
+              })
+            }
+          >
+            Trim from end
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Remove this segment from recorded study time? This correction cannot add the time back.",
+                )
+              )
+                void mutate({ delete: true, confirm: true });
+            }}
+          >
+            Remove segment
+          </button>
+        </div>
+      )}
+      {message && <small role="status">{message}</small>}
+    </div>
+  );
+}
 function StudyHistory() {
   const stats = query<{
     today: string;
@@ -515,6 +640,21 @@ function StudyHistory() {
               {fmt(item.durationMs)}
               <small>{item.state}</small>
             </span>
+            {item.segments.length > 0 && (
+              <details className="session-corrections">
+                <summary>Adjust recorded time</summary>
+                <p>
+                  Corrections can only shorten or remove recorded intervals.
+                </p>
+                {item.segments.map((segment) => (
+                  <SessionSegmentCorrection
+                    key={segment.id}
+                    sessionId={item.id}
+                    segment={segment}
+                  />
+                ))}
+              </details>
+            )}
           </li>
         ))}
       </ol>

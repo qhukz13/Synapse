@@ -3,6 +3,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { Config } from "./config";
 import { Temporal } from "@js-temporal/polyfill";
 import { dailyStudyTime, streakSummary } from "@synapse/core/sessions";
+import { transaction } from "./db/transaction";
 
 type Session = {
   id: string;
@@ -242,6 +243,89 @@ export class SessionService {
       });
     this.audit(id, at, action, before, this.get(id));
     return this.get(id);
+  }
+  trimSegment(
+    id: string,
+    segmentId: number,
+    patch: {
+      startAt?: number | undefined;
+      endAt?: number | undefined;
+      delete?: boolean | undefined;
+      confirm?: boolean | undefined;
+    },
+  ) {
+    const session = this.get(id);
+    if (!session)
+      throw Object.assign(Error("Study session not found."), {
+        statusCode: 404,
+      });
+    if (session.state === "discarded")
+      throw Object.assign(Error("Discarded sessions cannot be corrected."), {
+        statusCode: 409,
+      });
+    const segment = this.db
+      .prepare("SELECT * FROM session_segment WHERE id=? AND session_id=?")
+      .get(segmentId, id) as
+      | {
+          id: number;
+          started_at: number;
+          ended_at: number | null;
+          close_reason: string | null;
+        }
+      | undefined;
+    if (!segment)
+      throw Object.assign(Error("Study segment not found."), {
+        statusCode: 404,
+      });
+    if (segment.ended_at === null)
+      throw Object.assign(
+        Error("Pause or finish the session before correcting this segment."),
+        { statusCode: 409 },
+      );
+    const at = this.now();
+    if (patch.delete) {
+      if (!patch.confirm)
+        throw Object.assign(
+          Error("Confirm removal of this recorded segment."),
+          { statusCode: 422 },
+        );
+      transaction(this.db, () => {
+        this.db
+          .prepare("DELETE FROM session_segment WHERE id=?")
+          .run(segmentId);
+        this.audit(id, at, "trim", segment, { deleted: true, segmentId });
+      });
+      return { sessionId: id, segmentId, deleted: true };
+    }
+    const startAt = patch.startAt ?? segment.started_at;
+    const endAt = patch.endAt ?? segment.ended_at;
+    if (
+      !Number.isSafeInteger(startAt) ||
+      !Number.isSafeInteger(endAt) ||
+      startAt < segment.started_at ||
+      endAt > segment.ended_at ||
+      startAt >= endAt
+    )
+      throw Object.assign(
+        Error(
+          "A correction can only shorten a segment and must leave positive recorded time.",
+        ),
+        { statusCode: 422 },
+      );
+    if (startAt === segment.started_at && endAt === segment.ended_at)
+      throw Object.assign(Error("Choose a shorter start or end time."), {
+        statusCode: 422,
+      });
+    const after = { ...segment, started_at: startAt, ended_at: endAt };
+    transaction(this.db, () => {
+      this.db
+        .prepare(
+          "UPDATE session_segment SET started_at=?,ended_at=? WHERE id=?",
+        )
+        .run(startAt, endAt, segmentId);
+      this.audit(id, at, "trim", segment, after);
+    });
+    return after;
   }
   heartbeat(id: string, lastInputAt: number) {
     const s = this.get(id);

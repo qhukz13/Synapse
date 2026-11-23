@@ -10,7 +10,7 @@ M10, Dashboard foundation (prioritized before further M7/M8 work). The first usa
 - M2 added the local API, watcher, replayable events, stable SQLite identities and contentless search. A socket integration test covers reconnect and replay. URL stability under new duplicate basenames still needs integration.
 - M3–M4 added the responsive reader, Markdown and KaTeX rendering, local search, folder/domain/Learning Path grouping, URL-filtered list, resources and practice displays, library links, and a read-only Vault Health view. The full shell, command palette and all-note browser rendering sweep are pending.
 - M5 added the audited write coordinator, opt-in CodeMirror source editor with preview, guarded status and checkbox actions, conflict comparison, backups, file history, and explicit restore. Draft persistence, automatic three-way merge, the full metadata form, mirror controls and conflict-copy resolution are pending.
-- M7 adds persistent sessions with server-side lifecycle controls, topic association, heartbeat loss and restart recovery, idle auto-pause and bounded restore, an active-time cap, audit history, timezone-aware totals and streaks, a global timer with the ten-minute streak qualification hairline, and a session history view.
+- M7 adds persistent sessions with server-side lifecycle controls, topic association, heartbeat loss and restart recovery, idle auto-pause and bounded restore, an active-time cap, audit history, timezone-aware totals and streaks, a global timer with the ten-minute streak qualification hairline, a session history view, and explicit shorten-only corrections for completed intervals. Corrections are audited; removal requires confirmation and extension is rejected.
 - M10 dashboard foundation: `/` is now a data-backed dashboard; the curriculum tree lives at `/roadmap/tree`. It shows real continue/next suggestions and reasons, status-derived stage progress, measured study/streak data, recent activity, recently modified vault files and health errors. The Resources page lists deduplicated curriculum links, topic associations and a persisted completed/uncompleted toggle. Deterministic recommendation rules are in the pure core and never exclude topics because of prerequisites.
 
 ## Vault connection and Properties
@@ -25,6 +25,7 @@ The reader shows the active vault path and access mode. Each topic displays its 
 - Discovery and current PDF/URL totals differ as described in docs/ARCH-NOTES.md. The POSIX write fallback has the final check-to-rename limitation documented in DEVELOPMENT.md.
 - Production build passed. Vite warned that the lazy editor chunk exceeds its default size warning threshold.
 - Dashboard verification: 137 unit/integration tests pass; TypeScript, ESLint and production build pass. The 18-check full Chromium suite passed across desktop, medium and compact widths, including dashboard recommendations and persisted resource completion. The real vault verifier reports 227 files checked and zero created, removed or modified.
+- Session correction verification: 139 unit/integration tests pass, including API checks that shorten a recorded interval, reject extensions, require confirmation to remove it, and persist the audit record. TypeScript, ESLint, and production build pass. The build retains the existing large editor chunk warning.
 
 ## Commits
 
@@ -32,7 +33,7 @@ The reader shows the active vault path and access mode. Each topic displays its 
 
 ## Remaining work
 
-Finish M5 acceptance including manual Obsidian concurrency and recovery verification. M7 still needs segment correction controls, the end-of-session note sheet, activity and focus rollups, and wider progress acceptance. The M10 dashboard is its first vertical slice: manual review panels, richer progress rollups, checkpoints and recommendation refinements remain. Continue with M8 personal notes and exercise completion, M9 attachment management and file viewers, the M10 interactive graph and full dashboard, M11 manual reviews and fuller analytics, then M12–M13 responsive, performance, accessibility and release acceptance.
+Finish M5 acceptance including manual Obsidian concurrency and recovery verification. M7 still needs the end-of-session note sheet, activity and focus rollups, and wider progress acceptance. The M10 dashboard is its first vertical slice: manual review panels, richer progress rollups, checkpoints and recommendation refinements remain. Continue with M8 personal notes and exercise completion, M9 attachment management and file viewers, the M10 interactive graph and full dashboard, M11 manual reviews and fuller analytics, then M12–M13 responsive, performance, accessibility and release acceptance.
 
 ## M6 repair and migration checkpoint
 
