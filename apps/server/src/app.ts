@@ -49,12 +49,10 @@ export async function createApp(config: Config, dev = false) {
           : status >= 500
             ? "The local operation failed. Check file access and application storage."
             : err.message;
-      rep
-        .code(status)
-        .send({
-          message,
-          code: err.code ?? (status === 409 ? "CONFLICT" : "VALIDATION"),
-        });
+      rep.code(status).send({
+        message,
+        code: err.code ?? (status === 409 ? "CONFLICT" : "VALIDATION"),
+      });
     },
   );
   const dist = join(projectDir, "apps/web/dist");
@@ -68,8 +66,10 @@ export async function createApp(config: Config, dev = false) {
         : rep.code(404).send({ message: "Not found" }),
     );
   }
-  app.addHook("onClose", async () => {
+  app.addHook("preClose", async () => {
     await work.close();
+  });
+  app.addHook("onClose", async () => {
     state.close();
   });
   return ctx;
@@ -114,10 +114,9 @@ function registerRead({ app, config, state, work, topic }: Context) {
   });
   app.get<{ Params: { slug: string } }>("/api/topics/:slug", (req) => {
     const note = topic(req.params.slug);
-    const file = work.scan.files.find(f => f.path === note.path)!;
-    return {...note, body: file.text.slice(note.fm.bodyStart)};
-  },
-  );
+    const file = work.scan.files.find((f) => f.path === note.path)!;
+    return { ...note, body: file.text.slice(note.fm.bodyStart) };
+  });
   app.get<{ Params: { slug: string } }>("/api/topics/:slug/source", (req) => {
     const n = topic(req.params.slug),
       file = work.scan.files.find((f) => f.path === n.path)!;

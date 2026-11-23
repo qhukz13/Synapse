@@ -19,3 +19,11 @@ M0 checks: 5 configuration tests passed and the Vite → Fastify smoke journey p
 All 194 Markdown documents and 166 metadata blocks parsed. The full index contains 162 prerequisite edges (145 curriculum edges), 12 stages and 16 checkbox-backed statuses. The health inventory agrees with discovery, including 3 folder links, 6 body-only prerequisite warnings, 33 redundant edges and 8 later prerequisites. The initial integrity scan compared 227 files with zero creations, changes or removals. See docs/ARCH-NOTES.md for the PDF and bare-URL baseline differences.
 
 The core suite passed 33 checks with 99.59% line coverage. Foundation commit a7a787f reached origin/main. M2 is in progress. Full-fidelity file writes, change sets and activity features are still pending.
+
+## Reader checkpoint
+
+The loopback read API, watcher and event stream are integrated. SQLite identity and contentless search are live. The reader displays Markdown, advisory prerequisites, resources and practice material. The browser shell also includes a folder-based curriculum view, full-text search, library links and a read-only health list. The current verifier matches the reconciled inventory and confirmed 227 files unchanged.
+
+The read server is committed as 812b092. The remaining M2 check is browser verification of event replay. M3–M4 still need the complete shell, Learning Path ordering, list filters, command palette and the full-vault rendering sweep. M5 patchers and the coordinator are under isolated testing. No application route invokes the coordinator yet. M6–M13 remain open.
+
+The next integration steps are to finish the reader acceptance gaps, verify the write stress run, and route explicitly authorized editor and status actions through the coordinator.

@@ -1,0 +1,188 @@
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+@import "@fontsource-variable/source-serif-4";
+
+:root {
+  color-scheme: dark;
+  --bg-0: #0d0e10;
+  --bg-1: #131417;
+  --bg-2: #191b1f;
+  --bg-3: #212328;
+  --border-1: #24262b;
+  --border-2: #30333a;
+  --fg-1: #e7e8ea;
+  --fg-2: #a3a7af;
+  /* The planning swatch #6f747d drops below AA on raised surfaces. */
+  --fg-3: #858b95;
+  --accent: #7aa2f7;
+  --accent-fg: #0d0e10;
+  --danger: #f7768e;
+  --warning: #e0af68;
+  --success: #9ece6a;
+  --diff-add: rgba(158, 206, 106, .14);
+  --diff-del: rgba(247, 118, 142, .14);
+
+  --status-unread: var(--fg-3);
+  --status-learning: var(--accent);
+  --status-understood: #73daca;
+  --status-practiced: var(--success);
+  --status-mastered: #bb9af7;
+  --status-review: var(--warning);
+
+  --domain-mathematics: #c0a36e;
+  --domain-machine-learning: var(--accent);
+  --domain-deep-learning: #bb9af7;
+  --domain-nlp: #7dcfff;
+  --domain-generative-ai: var(--danger);
+  --domain-reinforcement-learning: var(--success);
+  --domain-mlops: #ff9e64;
+  --domain-programming: #a9b1d6;
+  --domain-research: #73daca;
+
+  --font-ui: "Inter Variable", Inter, system-ui, sans-serif;
+  --font-reading: var(--font-ui);
+  --font-serif-reading: "Source Serif 4 Variable", Georgia, serif;
+  --font-code: "JetBrains Mono Variable", ui-monospace, monospace;
+  --reading-size: 1rem;
+  --reading-leading: 1.75;
+  --reading-width: 72ch;
+
+  --space-1: .25rem;
+  --space-2: .5rem;
+  --space-3: .75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --input-radius: .25rem;
+  --button-radius: .375rem;
+  --dialog-radius: .5rem;
+  --focus-ring: 0 0 0 2px var(--bg-1), 0 0 0 4px var(--accent);
+  --popover-shadow: 0 8px 24px rgb(0 0 0 / .45);
+  --motion-duration: 150ms;
+  --motion-easing: ease-out;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-0: #f4f4f2;
+  --bg-1: #fbfbfa;
+  --bg-2: #ffffff;
+  --bg-3: #efefec;
+  --border-1: #e4e4e0;
+  --border-2: #c7c9c8;
+  --fg-1: #1d1f23;
+  --fg-2: #4c5058;
+  /* The planning swatch #767b84 drops below AA on the reading surface. */
+  --fg-3: #676c75;
+  --accent: #3d63c9;
+  --accent-fg: #ffffff;
+  --danger: #ad334c;
+  --warning: #825818;
+  --success: #456c23;
+  --diff-add: rgba(69, 108, 35, .12);
+  --diff-del: rgba(173, 51, 76, .1);
+  --status-understood: #167468;
+  --status-mastered: #754da6;
+  --domain-mathematics: #8b743f;
+  --domain-deep-learning: #845dad;
+  --domain-nlp: #277c9c;
+  --domain-mlops: #ab622c;
+  --domain-programming: #6b7198;
+  --domain-research: #38877e;
+  --popover-shadow: 0 8px 24px rgb(29 31 35 / .15);
+}
+
+:root[data-reading-font="serif"] {
+  --font-reading: var(--font-serif-reading);
+  --reading-size: 1.0625rem;
+  --reading-leading: 1.71;
+}
+
+@theme inline {
+  --color-canvas: var(--bg-0);
+  --color-surface: var(--bg-1);
+  --color-raised: var(--bg-2);
+  --color-hover: var(--bg-3);
+  --color-hairline: var(--border-1);
+  --color-field: var(--border-2);
+  --color-foreground: var(--fg-1);
+  --color-secondary: var(--fg-2);
+  --color-muted: var(--fg-3);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-fg);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-code);
+  --font-serif: var(--font-serif-reading);
+  --radius-control: var(--button-radius);
+  --radius-dialog: var(--dialog-radius);
+}
+
+@layer base {
+  html {
+    background: var(--bg-0);
+    color: var(--fg-1);
+    font-family: var(--font-ui);
+    font-feature-settings: "cv11", "ss01";
+  }
+  body {
+    margin: 0;
+    font-size: .875rem;
+    line-height: 1.57;
+  }
+  button, input, select, textarea { font: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  ::selection { color: var(--accent-fg); background: var(--accent); }
+}
+
+.synapse-wordmark {
+  font-family: var(--font-ui);
+  font-weight: 600;
+  letter-spacing: -.01em;
+  color: var(--fg-1);
+}
+
+.synapse-reader {
+  max-inline-size: var(--reading-width);
+  font-family: var(--font-reading);
+  font-size: var(--reading-size);
+  line-height: var(--reading-leading);
+  overflow-wrap: anywhere;
+}
+.synapse-reader :where(h1, h2, h3) {
+  font-family: var(--font-ui);
+  font-weight: 600;
+  letter-spacing: -.02em;
+  text-wrap: balance;
+}
+.synapse-reader h1 { font-size: 1.75rem; line-height: 1.3; }
+.synapse-reader h2 {
+  margin-block-start: var(--space-10);
+  border-block-start: 1px solid var(--border-1);
+  padding-block-start: var(--space-6);
+  font-size: 1.3125rem;
+  line-height: 1.43;
+}
+.synapse-reader h3 { font-size: 1.0625rem; line-height: 1.53; }
+.synapse-reader :where(code, pre, kbd), .synapse-number {
+  font-family: var(--font-code);
+  font-variant-numeric: tabular-nums;
+}
+.synapse-reader pre, .synapse-reader .katex-display { overflow-x: auto; }
+.synapse-reader :where(img, video) { max-inline-size: 100%; height: auto; }
+.synapse-reader .katex { font-size: 1.05em; }
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --motion-duration: 0ms; }
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}

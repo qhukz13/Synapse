@@ -1,0 +1,142 @@
+.markdown-view {
+  min-inline-size: 0;
+  color: var(--fg-1);
+}
+.markdown-view > :first-child {
+  margin-block-start: 0;
+}
+.markdown-view p {
+  margin-block: 0.875em;
+}
+.markdown-view a {
+  color: var(--accent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+.markdown-view a:hover {
+  text-decoration-thickness: 2px;
+}
+.markdown-view .broken-link {
+  color: var(--danger);
+  text-decoration: underline dotted;
+}
+.markdown-view blockquote {
+  margin-inline: 0;
+  padding-inline-start: 1rem;
+  border-inline-start: 2px solid var(--border-2);
+  color: var(--fg-2);
+}
+.markdown-view .synapse-callout {
+  --callout-accent: var(--accent);
+  margin-block: 1.25rem;
+  padding: 0.625rem 1rem;
+  border: 1px solid var(--border-1);
+  border-inline-start: 3px solid var(--callout-accent);
+  border-radius: var(--input-radius);
+  background: var(--bg-2);
+}
+.markdown-view .callout-tip {
+  --callout-accent: var(--success);
+}
+.markdown-view .callout-important,
+.markdown-view .callout-warning {
+  --callout-accent: var(--warning);
+}
+.synapse-callout > summary {
+  color: var(--callout-accent);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.markdown-view .reader-table {
+  overflow-x: auto;
+}
+.reader-table table {
+  border-collapse: collapse;
+  margin-block: 1rem;
+  font-size: 0.9375rem;
+}
+.reader-table :is(th, td) {
+  padding: 0.5rem 0.875rem;
+  border: 1px solid var(--border-2);
+  text-align: start;
+}
+.reader-table th {
+  background: var(--bg-2);
+}
+.markdown-view .synapse-code {
+  background: var(--bg-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--button-radius);
+  margin-block: 1rem;
+}
+.synapse-code pre {
+  margin: 0;
+  padding: 0.875rem 1rem;
+  white-space: pre;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+.synapse-code code {
+  white-space: pre;
+  overflow-wrap: normal;
+}
+.synapse-code .code-language {
+  padding: 0.25rem 1rem;
+  border-bottom: 1px solid var(--border-1);
+  font: 0.75rem/1.5 var(--font-code);
+  color: var(--fg-3);
+}
+.synapse-code span[style] {
+  color: var(--shiki-dark, inherit);
+}
+:root[data-theme="light"] .synapse-code span[style] {
+  color: var(--shiki-light, inherit);
+}
+.markdown-view :not(pre) > code {
+  background: var(--bg-2);
+  border-radius: 0.2rem;
+  padding: 0.08rem 0.25rem;
+  font-size: 0.875em;
+}
+.markdown-view .video-load {
+  color: var(--accent);
+  border: 1px solid var(--border-2);
+  border-radius: var(--input-radius);
+  padding: 0.2em 0.65em;
+  background: var(--bg-2);
+  font: 500 0.8125rem/1.5 var(--font-ui);
+  cursor: pointer;
+}
+.markdown-view .video-frame {
+  display: block;
+  margin-block: 0.75rem;
+  border: 0;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+}
+.markdown-view :is(h1, h2, h3, h4, h5, h6) {
+  scroll-margin-block-start: 4.25rem;
+}
+.markdown-view .contains-task-list {
+  list-style: none;
+  padding-inline-start: 0.25rem;
+}
+.markdown-view ul,
+.markdown-view ol {
+  padding-inline-start: 1.6rem;
+}
+.markdown-view ul:not(.contains-task-list) {
+  list-style-type: disc;
+}
+.markdown-view ol {
+  list-style-type: decimal;
+}
+.markdown-view li {
+  margin-block: 0.25rem;
+}
+.markdown-view input[type="checkbox"] {
+  margin-inline-end: 0.4rem;
+  accent-color: var(--accent);
+}
