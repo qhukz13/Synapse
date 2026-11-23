@@ -2,7 +2,7 @@
 
 ## Current milestone
 
-M5, editing and synchronization. Synapse is usable as a local vault reader. The complete F1–F24 release remains in development.
+M6, Vault Health and migrations. Synapse is usable as a local vault reader. The complete F1–F24 release remains in development.
 
 ## Implemented
 
@@ -35,4 +35,6 @@ Finish M5 acceptance including manual Obsidian concurrency and recovery verifica
 
 Vault Health now previews folder-link repairs, prerequisites already documented in the body, and Python Course metadata additions. The real vault produced nine repair previews and 25 course previews. Each item shows its evidence and the original and proposed contents. Apply requires individual file selection, explicit batch confirmation, a writable configuration, and matching hashes for the source and preview. The journal records the backups and supplies the original bytes for undo. A stale approval before apply requires a fresh preview. A conflicting change after the batch starts is recorded against the affected item.
 
-The 122-check suite passed, including isolated apply and byte-exact undo, stale approvals, and read-only previews. The remaining M6 work includes legacy note moves, additional repair families, editable proposal values, semantic post-apply validation with recovery, and the complete browser acceptance suite for approval and undo. M7 study sessions remain pending.
+The 122-check suite passed, including isolated apply and byte-exact undo, stale approvals, and read-only previews. The remaining M6 work includes legacy note moves, additional repair families, editable proposal values, broader post-apply acceptance coverage, and the complete browser acceptance suite for approval and undo. M7 study sessions remain pending.
+
+Post-apply validation compares the indexed file with the reviewed result and checks that the targeted issue is gone. An isolated regression verifies rollback when a repair leaves its issue present. A newer intervening edit is reported for review.

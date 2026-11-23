@@ -326,6 +326,35 @@ it("previews course migration read-only and applies and reverts the selected fil
     expect(reverted.statusCode).toBe(200);
     expect(reverted.json()[0].state).toBe("reverted");
     expect(await readFile(file, "utf8")).toBe(proposal.before);
+    const repeated = "See [[02 - Mathematics]] and [[02 - Mathematics]].\n";
+    const repeatedFile = join(vault, "Repeated folder link.md");
+    await writeFile(repeatedFile, repeated);
+    await writable.work.refresh();
+    const health = await writable.app.inject({
+      url: "/api/vault-health/proposals?kind=health-fix",
+      headers,
+    });
+    const partial = health
+      .json()
+      .find(
+        (item: { path: string }) => item.path === "Repeated folder link.md",
+      );
+    expect(partial).toBeDefined();
+    const failed = await writable.app.inject({
+      url: "/api/changesets/apply",
+      method: "POST",
+      headers: mutation,
+      payload: { ...payloadFor(partial), kind: "health-fix" },
+    });
+    expect(failed.statusCode).toBe(200);
+    expect(
+      failed
+        .json()
+        .find(
+          (item: { path: string }) => item.path === "Repeated folder link.md",
+        )?.state,
+    ).toBe("failed");
+    expect(await readFile(repeatedFile, "utf8")).toBe(repeated);
   } finally {
     await writable.app.close();
   }

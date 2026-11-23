@@ -285,6 +285,43 @@ export function registerChangesets(ctx: Context, writer: WriteCoordinator) {
           db.prepare(
             "UPDATE change_item SET state='applied',after_hash=?,backup_path=?,applied_at=? WHERE id=?",
           ).run(written.hash, written.backupPath, Date.now(), item.id);
+          const indexed = ctx.work.scan.files.find(
+            (file) => file.path === item.path,
+          );
+          const stillHasIssue = ctx.work.index.issues.some(
+            (issue) => issue.id === item.issueId,
+          );
+          if (indexed?.hash !== written.hash) {
+            db.prepare("UPDATE change_item SET error=? WHERE id=?").run(
+              "The file changed again after apply. Review the current contents before undoing.",
+              item.id,
+            );
+          } else if (written.hash !== hash(item.after) || stillHasIssue) {
+            try {
+              if (!written.id) throw new Error("No write journal entry");
+              await writer.write({
+                trigger: "changeset",
+                changeItemId: item.id,
+                path: item.path,
+                baseHash: written.hash,
+                op: {
+                  type: "replaceFile",
+                  text: writer.version(item.path, written.id),
+                },
+              });
+              db.prepare(
+                "UPDATE change_item SET state='failed',error=? WHERE id=?",
+              ).run(
+                "The result failed validation. The original bytes were restored.",
+                item.id,
+              );
+            } catch {
+              db.prepare("UPDATE change_item SET error=? WHERE id=?").run(
+                "The result failed validation and could not be restored automatically. Review the backup and current contents.",
+                item.id,
+              );
+            }
+          }
         } catch (error) {
           reconcile();
           db.prepare(
