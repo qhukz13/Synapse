@@ -369,10 +369,154 @@ function StatusControl({ note }: { note: Topic }) {
     </form>
   );
 }
+function CourseStatus({
+  note,
+  checkboxHash,
+}: {
+  note: Topic;
+  checkboxHash: string;
+}) {
+  const [pending, setPending] = useState(false),
+    [message, setMessage] = useState("");
+  async function toggle() {
+    if (!checkboxHash) return;
+    setPending(true);
+    setMessage("");
+    const expectedChecked = note.status.value === "checked";
+    try {
+      const response = await fetch(
+        "/api/topics/" + encodeURIComponent(note.slug) + "/checkbox",
+        {
+          method: "POST",
+          headers: { "X-Synapse": "1", "Content-Type": "application/json" },
+          body: JSON.stringify({
+            baseHash: checkboxHash,
+            offset: note.status.offset,
+            expectedChecked,
+            checked: !expectedChecked,
+          }),
+        },
+      );
+      if (!response.ok) throw Error((await response.json()).message);
+      await client.invalidateQueries();
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Status update failed",
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+  return (
+    <div className="view-controls">
+      <button
+        type="button"
+        disabled={pending || !checkboxHash}
+        onClick={() => void toggle()}
+      >
+        {note.status.value === "checked"
+          ? "Mark not completed"
+          : "Mark completed"}
+      </button>
+      <small>Stored in Python Course Home</small>
+      {message && <span role="status">{message}</span>}
+    </div>
+  );
+}
+function FileHistory({ note, writable }: { note: Topic; writable: boolean }) {
+  const [open, setOpen] = useState(false),
+    [selected, select] = useState(""),
+    [confirm, setConfirm] = useState(false),
+    [message, setMessage] = useState(""),
+    [busy, setBusy] = useState(false);
+  const [restoreHash, setRestoreHash] = useState("");
+  const path = "topics/" + encodeURIComponent(note.slug);
+  const history = query<{ id: string; at: number; trigger: string }[]>(
+    path + "/history",
+    open,
+  );
+  const backup = query<{ text: string }>(
+    path + "/history/" + selected,
+    open && !!selected,
+  );
+  async function restore() {
+    setBusy(true);
+    try {
+      const response = await fetch("/api/" + path + "/restore", {
+        method: "POST",
+        headers: { "X-Synapse": "1", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          backupId: selected,
+          baseHash: restoreHash,
+          confirm: true,
+        }),
+      });
+      if (!response.ok) throw Error((await response.json()).message);
+      setMessage("Version restored");
+      setConfirm(false);
+      select("");
+      await client.invalidateQueries();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Restore failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <details onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary>File history</summary>
+      {history.error && <p role="alert">{history.error.message}</p>}
+      {history.data?.length === 0 && <p>No saved versions.</p>}
+      <ul className="rows">
+        {history.data?.map((entry) => (
+          <li key={entry.id}>
+            <button
+              type="button"
+              onClick={() => {
+                select(entry.id);
+                setRestoreHash(note.hash);
+                setConfirm(false);
+                setMessage("");
+              }}
+            >
+              {new Date(entry.at).toLocaleString()} · {entry.trigger}
+            </button>
+          </li>
+        ))}
+      </ul>
+      {backup.error && <p role="alert">{backup.error.message}</p>}
+      {backup.data && (
+        <>
+          <h3>Saved Markdown</h3>
+          <pre>{backup.data.text}</pre>
+          {writable && (
+            <div className="view-controls">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={confirm}
+                  onChange={(event) => setConfirm(event.target.checked)}
+                />
+                Replace the current version of {note.title}
+              </label>
+              <button
+                disabled={!confirm || busy}
+                onClick={() => void restore()}
+              >
+                Restore selected version
+              </button>
+            </div>
+          )}
+        </>
+      )}
+      {message && <p role="status">{message}</p>}
+    </details>
+  );
+}
 function Reader() {
   const { slug } = useParams({ from: "/t/$slug" }),
     data = summary(),
-    note = query<Topic & { body: string }>(
+    note = query<Topic & { body: string; checkboxHash: string | null }>(
       "topics/" + encodeURIComponent(slug),
     );
   useEffect(() => {
@@ -416,6 +560,11 @@ function Reader() {
         !n.fm.error &&
         n.status.source === "frontmatter" && (
           <StatusControl key={n.slug + n.status.value} note={n} />
+        )}
+      {data.data?.writeEnabled &&
+        n.checkboxHash &&
+        n.status.source === "course-checkbox" && (
+          <CourseStatus note={n} checkboxHash={n.checkboxHash} />
         )}
       {n.fm.error && (
         <p role="alert">
@@ -488,6 +637,11 @@ function Reader() {
           <p>This note has no practice items.</p>
         )}
       </details>
+      <FileHistory
+        key={slug}
+        note={n}
+        writable={data.data?.writeEnabled === true}
+      />
       <Suspense fallback={<p role="status">Rendering note…</p>}>
         <MarkdownView source={n.body} resolveLink={resolveLink} />
       </Suspense>

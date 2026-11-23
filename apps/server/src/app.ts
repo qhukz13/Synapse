@@ -26,7 +26,7 @@ export async function createApp(config: Config, dev = false) {
   const writer = new WriteCoordinator(config, state.db, (origin) =>
     work.refresh(origin),
   );
-  if (config.allowVaultWrites) writer.recover();
+  writer.recover();
   await work.start();
   const topic = (slug: string) => {
     const node = work.index.nodes.find((x) => x.slug === slug);
@@ -128,7 +128,13 @@ function registerRead(
   app.get<{ Params: { slug: string } }>("/api/topics/:slug", (req) => {
     const note = topic(req.params.slug);
     const file = work.scan.files.find((f) => f.path === note.path)!;
-    return { ...note, body: file.text.slice(note.fm.bodyStart) };
+    const checkboxHash =
+      note.status.source === "course-checkbox"
+        ? (work.scan.files.find(
+            (source) => source.path === config.courseHomeNote,
+          )?.hash ?? null)
+        : null;
+    return { ...note, body: file.text.slice(note.fm.bodyStart), checkboxHash };
   });
   app.get<{ Params: { slug: string } }>("/api/topics/:slug/source", (req) => {
     const n = topic(req.params.slug),

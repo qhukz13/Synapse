@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { EditorView, basicSetup } from "codemirror";
 import { markdown } from "@codemirror/lang-markdown";
 
+const Preview = lazy(() => import("./markdown/MarkdownView"));
 interface Props {
   slug: string;
   title: string;
@@ -12,6 +13,7 @@ export default function Editor({ slug, title, source }: Props) {
     editor = useRef<EditorView | null>(null);
   const [base, setBase] = useState(source),
     [draft, setDraft] = useState(source.text);
+  const [showPreview, setShowPreview] = useState(false);
   const [message, setMessage] = useState(""),
     [saving, setSaving] = useState(false);
   const [conflict, setConflict] = useState<{
@@ -88,17 +90,55 @@ export default function Editor({ slug, title, source }: Props) {
   return (
     <>
       <h1>Edit {title}</h1>
-      <div className="source-editor" ref={mount} />
-      <div className="view-controls">
-        <button
-          type="button"
-          disabled={saving || draft === base.text || !!conflict}
-          onClick={() => void save()}
-        >
-          Save changes
-        </button>
-        <p role="status">{message}</p>
-      </div>
+      {source.hash !== base.hash && !conflict && (
+        <p role="status">The file changed on disk. Your draft is still open.</p>
+      )}
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!saving && !conflict && draft !== base.text) void save();
+        }}
+        onKeyDown={(event) => {
+          if (
+            (event.ctrlKey || event.metaKey) &&
+            event.key.toLowerCase() === "s"
+          ) {
+            event.preventDefault();
+            event.currentTarget.requestSubmit();
+          }
+        }}
+      >
+        <div className={showPreview ? "editor-split" : ""}>
+          <div className="source-editor" ref={mount} />
+          {showPreview && (
+            <Suspense fallback={<p role="status">Rendering preview…</p>}>
+              <Preview
+                source={draft.replace(
+                  /^(?:\uFEFF)?---[^\S\r\n]*\r?\n[\s\S]*?\r?\n---[^\S\r\n]*(?:\r?\n|$)/,
+                  "",
+                )}
+                resolveLink={() => undefined}
+              />
+            </Suspense>
+          )}
+        </div>
+        <div className="view-controls">
+          <button
+            type="submit"
+            disabled={saving || draft === base.text || !!conflict}
+          >
+            Save changes
+          </button>
+          <button
+            type="button"
+            aria-pressed={showPreview}
+            onClick={() => setShowPreview(!showPreview)}
+          >
+            Preview
+          </button>
+          <p role="status">{message}</p>
+        </div>
+      </form>
       {conflict && (
         <section aria-label="Edit conflict">
           <h2>Compare versions</h2>

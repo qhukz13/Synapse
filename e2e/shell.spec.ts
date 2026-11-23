@@ -2,6 +2,15 @@ import { test, expect } from "@playwright/test";
 test("uses vault search, reads a note and follows a prerequisite", async ({
   page,
 }) => {
+  const outbound: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (
+      ["http:", "https:"].includes(url.protocol) &&
+      url.hostname !== "127.0.0.1"
+    )
+      outbound.push(url.host);
+  });
   await page.goto("/");
   await expect(
     page.getByRole("heading", { name: "Learning path" }),
@@ -32,4 +41,5 @@ test("uses vault search, reads a note and follows a prerequisite", async ({
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+  expect(outbound).toEqual([]);
 });
