@@ -160,3 +160,66 @@ summary small {
     padding-top: 24px;
   }
 }
+.view-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.view-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.view-controls select {
+  background: var(--bg-2);
+  color: var(--fg-1);
+  border: 1px solid var(--border-2);
+  border-radius: 5px;
+  padding: 5px;
+  font: inherit;
+  max-width: 200px;
+}
+.view-controls input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.source-editor {
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  margin: 16px 0;
+  overflow: hidden;
+  background: var(--bg-1);
+}
+.source-editor .cm-editor {
+  min-height: 300px;
+  color: var(--fg-1);
+}
+.source-editor .cm-gutters,
+.source-editor .cm-activeLine,
+.source-editor .cm-activeLineGutter {
+  background: var(--bg-2);
+  color: var(--fg-2);
+}
+.source-editor .cm-cursor {
+  border-color: var(--fg-1);
+}
+.studio pre {
+  max-width: 100%;
+  overflow: auto;
+}
+.studio button {
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  background: var(--bg-2);
+  color: var(--fg-1);
+  font: inherit;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.studio button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}

@@ -1,3 +1,5 @@
+import { registerEditor } from "./routes/editor";
+import { WriteCoordinator, WriteError } from "./vault/writes";
 import Fastify, { type FastifyInstance } from "fastify";
 import staticFiles from "@fastify/static";
 import { existsSync } from "node:fs";
@@ -21,6 +23,10 @@ export async function createApp(config: Config, dev = false) {
   const work = new Workspace(config, (idx, files, origin) => {
     nids = state.reconcile(idx, files, origin);
   });
+  const writer = new WriteCoordinator(config, state.db, (origin) =>
+    work.refresh(origin),
+  );
+  if (config.allowVaultWrites) writer.recover();
   await work.start();
   const topic = (slug: string) => {
     const node = work.index.nodes.find((x) => x.slug === slug);
@@ -32,7 +38,8 @@ export async function createApp(config: Config, dev = false) {
     return nids.get(slug)!;
   };
   const ctx = { app, config, state, work, topic, nid };
-  registerRead(ctx);
+  registerRead(ctx, writer);
+  registerEditor(ctx, writer);
   app.get("/api/events", (req, reply) => {
     reply.hijack();
     work.subscribe(reply.raw, Number(req.headers["last-event-id"] ?? 0));
@@ -52,6 +59,9 @@ export async function createApp(config: Config, dev = false) {
       rep.code(status).send({
         message,
         code: err.code ?? (status === 409 ? "CONFLICT" : "VALIDATION"),
+        ...(err instanceof WriteError && err.details
+          ? { details: err.details }
+          : {}),
       });
     },
   );
@@ -82,7 +92,10 @@ export type Context = {
   topic: (slug: string) => Workspace["index"]["nodes"][number];
   nid: (slug: string) => string;
 };
-function registerRead({ app, config, state, work, topic }: Context) {
+function registerRead(
+  { app, config, state, work, topic }: Context,
+  writer: WriteCoordinator,
+) {
   app.get("/api/health", () => ({
     ok: true,
     vaultAvailable: !work.unavailable,
@@ -192,8 +205,17 @@ function registerRead({ app, config, state, work, topic }: Context) {
     const { severity } = z
       .object({ severity: z.string().optional() })
       .parse(req.query);
-    return work.index.issues.filter(
-      (i) => !severity || i.severity === severity,
+    const recovery = writer.recoveryIssues.map((issue, index) => ({
+      id: "recovery-" + index,
+      code: "write.unknownState",
+      severity: "error",
+      path: issue.path,
+      line: null,
+      message: issue.message,
+      why: "Review the current file and its backup before editing.",
+    }));
+    return [...work.index.issues, ...recovery].filter(
+      (issue) => !severity || issue.severity === severity,
     );
   });
   app.post("/api/admin/reindex", async () => {

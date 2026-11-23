@@ -1,3 +1,5 @@
+import { get } from "node:http";
+import { Readable } from "node:stream";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import {
   mkdtemp,
@@ -119,4 +121,97 @@ it("detects editor temp-renames and keeps the topic identity", async () => {
   await changed;
   expect(ctx.topic("linear-regression").status.value).toBe("understood");
   expect(ctx.nid("linear-regression")).toBe(id);
+});
+
+it("replays missed index events when a client reconnects", async () => {
+  const origin = await ctx.app.listen({ host: "127.0.0.1", port: 0 });
+  const connect = (cursor?: string) =>
+    new Promise<ReadableStream<Uint8Array>>((resolve, reject) => {
+      const request = get(
+        origin + "/api/events",
+        {
+          headers: {
+            ...headers,
+            ...(cursor ? { "Last-Event-ID": cursor } : {}),
+          },
+          signal: AbortSignal.timeout(3000),
+        },
+        (response) => {
+          if (response.statusCode !== 200) {
+            response.resume();
+            reject(Error("Unexpected event status " + response.statusCode));
+            return;
+          }
+          resolve(Readable.toWeb(response) as ReadableStream<Uint8Array>);
+        },
+      );
+      request.once("error", reject);
+    });
+  const first = (await connect()).getReader();
+  const decoder = new TextDecoder();
+  async function readUntil(stream: typeof first, expected: string) {
+    let result = "";
+    while (!result.includes(expected)) {
+      const chunk = await stream.read();
+      if (chunk.done) throw Error("Event stream closed before " + expected);
+      result += decoder.decode(chunk.value, { stream: true });
+    }
+    return result;
+  }
+  const initial = await readUntil(first, "event: index.changed");
+  await first.cancel();
+  const cursor = /id: (\d+)/.exec(initial)![1]!;
+  const path = join(root, "vault", "Late arrival.md");
+  await writeFile(path, "# Late arrival");
+  await ctx.work.refresh();
+  const stream = (await connect(cursor)).getReader();
+  try {
+    const events = await readUntil(stream, "Late arrival.md");
+    expect(events).toContain("event: index.changed");
+  } finally {
+    await stream.cancel();
+  }
+});
+
+it("requires opt-in, saves an authorized edit and exposes stale source without overwriting", async () => {
+  const url = "/api/topics/linear-regression/source";
+  const mutation = {
+    ...headers,
+    origin: "http://127.0.0.1:4317",
+    "x-synapse": "1",
+  };
+  const read = (context: Context) => context.app.inject({ url, headers });
+  const save = (context: Context, text: string, baseHash: string) =>
+    context.app.inject({
+      url,
+      method: "PUT",
+      headers: mutation,
+      payload: { text, baseHash },
+    });
+  const original = (await read(ctx)).json();
+  expect(
+    (await save(ctx, original.text + "\nBlocked edit", original.hash))
+      .statusCode,
+  ).toBe(403);
+  const writable = await createApp(
+    configFrom({
+      vaultPath: join(root, "vault"),
+      dataDir: join(root, "write-state"),
+      allowVaultWrites: true,
+    }),
+  );
+  try {
+    const changed = original.text + "\nAn authorized edit.\n";
+    expect((await save(writable, changed, original.hash)).statusCode).toBe(200);
+    const stale = await save(
+      writable,
+      original.text + "\nA stale draft.",
+      original.hash,
+    );
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json().details.theirs).toBe(changed);
+    expect((await read(writable)).json().text).toBe(changed);
+  } finally {
+    await writable.app.close();
+  }
 });

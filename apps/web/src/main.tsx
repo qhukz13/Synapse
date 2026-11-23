@@ -1,3 +1,4 @@
+import { vocabulary, confirmTransition } from "@synapse/core/status";
 import { createRoot } from "react-dom/client";
 import {
   createRootRoute,
@@ -7,6 +8,8 @@ import {
   Outlet,
   RouterProvider,
   useParams,
+  useNavigate,
+  useSearch,
 } from "@tanstack/react-router";
 import {
   QueryClient,
@@ -22,6 +25,7 @@ import { SynapseMark } from "./design/SynapseMark";
 import "./workspace.css";
 
 const MarkdownView = lazy(() => import("./markdown/MarkdownView"));
+const Editor = lazy(() => import("./Editor"));
 const client = new QueryClient();
 function query<T>(url: string, enabled = true) {
   return useQuery({
@@ -40,8 +44,21 @@ function query<T>(url: string, enabled = true) {
   });
 }
 const summary = () =>
-  query<Catalogue & { unavailable: string }>("index/summary");
+  query<Catalogue & { unavailable: string; writeEnabled: boolean }>(
+    "index/summary",
+  );
 function Layout() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    const shortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        void navigate({ to: "/search" });
+      }
+    };
+    document.addEventListener("keydown", shortcut);
+    return () => document.removeEventListener("keydown", shortcut);
+  }, [navigate]);
   useEffect(() => {
     const events = new EventSource("/api/events");
     const refresh = () => {
@@ -98,17 +115,34 @@ function Rows({ topics }: { topics: TopicRow[] }) {
 }
 function Curriculum() {
   const result = summary(),
-    [filter, setFilter] = useState("");
+    [filter, setFilter] = useState(""),
+    [groupBy, setGroupBy] = useState("path");
   if (!result.data)
     return <p role="status">{result.error?.message ?? "Opening the vault…"}</p>;
   if (result.data.unavailable)
     return <p role="alert">{result.data.unavailable}</p>;
   const groups = new Map<string, TopicRow[]>();
-  for (const t of result.data.topics.filter((t) =>
+  const matched = result.data.topics.filter((t) =>
     t.title.toLowerCase().includes(filter.toLowerCase()),
-  )) {
-    const k = t.folder.split("/")[0] || "Vault";
-    groups.set(k, [...(groups.get(k) ?? []), t]);
+  );
+  if (groupBy === "path")
+    matched.sort(
+      (a, b) =>
+        (a.position?.index ?? Infinity) - (b.position?.index ?? Infinity),
+    );
+  for (const t of matched) {
+    const stage = result.data.learningPath.stages.find(
+      (stage) => stage.number === t.stage,
+    );
+    const key =
+      groupBy === "domain"
+        ? t.domain || "Unspecified domain"
+        : groupBy === "path" && stage
+          ? stage.number + " · " + stage.name
+          : t.folder || "Vault";
+    const group = groups.get(key) ?? [];
+    group.push(t);
+    groups.set(key, group);
   }
   return (
     <>
@@ -122,6 +156,17 @@ function Curriculum() {
         value={filter}
         onChange={(e) => setFilter(e.target.value)}
       />
+      <div className="view-controls">
+        <label>
+          Group by{" "}
+          <select value={groupBy} onChange={(e) => setGroupBy(e.target.value)}>
+            <option value="path">Learning path</option>
+            <option value="folder">Folder</option>
+            <option value="domain">Domain</option>
+          </select>
+        </label>
+        <Link to="/roadmap/list">Open as list</Link>
+      </div>
       {groups.size === 0 && <p>No matching topics.</p>}
       {[...groups].map(([group, topics]) => (
         <details
@@ -131,12 +176,197 @@ function Curriculum() {
           }
         >
           <summary>
-            {group} <small>{topics.length}</small>
+            {group}{" "}
+            <small>
+              {
+                topics.filter((topic) => topic.status.category === "completed")
+                  .length
+              }
+              /{topics.length} completed
+            </small>
           </summary>
           <Rows topics={topics} />
         </details>
       ))}
     </>
+  );
+}
+function TopicList() {
+  const result = summary(),
+    filters = useSearch({ from: "/roadmap/list" }),
+    navigate = useNavigate({ from: "/roadmap/list" });
+  const topics = result.data?.topics ?? [];
+  const domains = [
+    ...new Set(topics.map((topic) => topic.domain).filter(Boolean)),
+  ].sort();
+  const filtered = topics.filter(
+    (t) =>
+      (!filters.domain || t.domain === filters.domain) &&
+      (!filters.status || t.status.value === filters.status) &&
+      (!filters.q || t.title.toLowerCase().includes(filters.q.toLowerCase())) &&
+      (!filters.ready ||
+        ["none", "met"].includes(
+          result.data?.prerequisites[t.slug]?.summary ?? "none",
+        )),
+  );
+  filtered.sort((a, b) =>
+    filters.sort === "recent"
+      ? b.mtimeMs - a.mtimeMs
+      : a.title.localeCompare(b.title),
+  );
+  const update = (patch: Partial<typeof filters>) =>
+    void navigate({ search: { ...filters, ...patch }, replace: true });
+  return (
+    <>
+      <header>
+        <h1>Curriculum list</h1>
+        <Link to="/">Open as tree</Link>
+      </header>
+      <input
+        aria-label="Find a topic"
+        placeholder="Find a topic"
+        value={filters.q}
+        onChange={(e) => update({ q: e.target.value })}
+      />
+      <div className="view-controls">
+        <label>
+          Domain{" "}
+          <select
+            value={filters.domain}
+            onChange={(e) => update({ domain: e.target.value })}
+          >
+            <option value="">All</option>
+            {domains.map((d) => (
+              <option key={d}>{d}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Status{" "}
+          <select
+            value={filters.status}
+            onChange={(e) => update({ status: e.target.value })}
+          >
+            <option value="">All</option>
+            {[
+              ...new Set(
+                topics.map((topic) => topic.status.value).filter(Boolean),
+              ),
+            ]
+              .sort()
+              .map((status) => (
+                <option key={status}>{status}</option>
+              ))}
+          </select>
+        </label>
+        <label>
+          Sort{" "}
+          <select
+            value={filters.sort}
+            onChange={(e) => update({ sort: e.target.value })}
+          >
+            <option value="title">Title</option>
+            <option value="recent">Recently edited</option>
+          </select>
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={filters.ready}
+            onChange={(e) => update({ ready: e.target.checked })}
+          />
+          Prerequisites met
+        </label>
+      </div>
+      {result.error && <p role="alert">{result.error.message}</p>}
+      {result.data && filtered.length === 0 && <p>No matching topics.</p>}
+      <Rows topics={filtered} />
+    </>
+  );
+}
+function StatusControl({ note }: { note: Topic }) {
+  const [value, setValue] = useState(note.status.value);
+  const [message, setMessage] = useState("");
+  const [pending, setPending] = useState(false);
+  const project = ["project", "course-project"].includes(note.kind);
+  const requiresConfirmation =
+    project && confirmTransition(note.status.value, value);
+  const [confirm, setConfirm] = useState(false);
+  async function save() {
+    setPending(true);
+    setMessage("");
+    try {
+      const response = await fetch(
+        "/api/topics/" + encodeURIComponent(note.slug) + "/meta",
+        {
+          method: "PATCH",
+          headers: { "X-Synapse": "1", "Content-Type": "application/json" },
+          body: JSON.stringify({
+            baseHash: note.hash,
+            set: { status: value },
+            expect: { status: note.fm.meta.status },
+            confirm,
+          }),
+        },
+      );
+      const result = await response.json();
+      if (!response.ok) throw Error(result.message);
+      await client.invalidateQueries();
+      setMessage("Status saved");
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Status update failed",
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+  return (
+    <form
+      className="view-controls"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void save();
+      }}
+    >
+      <label>
+        Status{" "}
+        <select
+          value={value}
+          onChange={(e) => {
+            setValue(e.target.value);
+            setConfirm(false);
+          }}
+        >
+          {!vocabulary(note.kind).includes(note.status.value) && (
+            <option>{note.status.value}</option>
+          )}
+          {vocabulary(note.kind).map((status) => (
+            <option key={status}>{status}</option>
+          ))}
+        </select>
+      </label>
+      {requiresConfirmation && (
+        <label>
+          <input
+            type="checkbox"
+            checked={confirm}
+            onChange={(e) => setConfirm(e.target.checked)}
+          />
+          Confirm status change
+        </label>
+      )}
+      <button
+        disabled={
+          pending ||
+          value === note.status.value ||
+          (requiresConfirmation && !confirm)
+        }
+      >
+        Save status
+      </button>
+      {message && <small role="status">{message}</small>}
+    </form>
   );
 }
 function Reader() {
@@ -162,6 +392,11 @@ function Reader() {
   };
   return (
     <>
+      {data.data?.writeEnabled && (
+        <Link to="/t/$slug/edit" params={{ slug }}>
+          Edit source
+        </Link>
+      )}
       <div className="crumb">
         <Link to="/">Learning path</Link> / {n.folder}
       </div>
@@ -177,6 +412,11 @@ function Reader() {
             .join(" · ")}
         </p>
       </header>
+      {data.data?.writeEnabled &&
+        !n.fm.error &&
+        n.status.source === "frontmatter" && (
+          <StatusControl key={n.slug + n.status.value} note={n} />
+        )}
       {n.fm.error && (
         <p role="alert">
           Metadata issue on line {n.fm.line}. {n.fm.error}
@@ -250,6 +490,38 @@ function Reader() {
       </details>
       <Suspense fallback={<p role="status">Rendering note…</p>}>
         <MarkdownView source={n.body} resolveLink={resolveLink} />
+      </Suspense>
+    </>
+  );
+}
+function EditTopic() {
+  const { slug } = useParams({ from: "/t/$slug/edit" }),
+    settings = summary();
+  const source = query<{ text: string; hash: string }>(
+    "topics/" + encodeURIComponent(slug) + "/source",
+    settings.data?.writeEnabled === true,
+  );
+  const topic = settings.data?.topics.find((item) => item.slug === slug);
+  if (settings.data && !settings.data.writeEnabled)
+    return <p role="status">This vault is open in read-only mode.</p>;
+  if (!source.data || !topic)
+    return (
+      <p role="status">
+        {source.error?.message ?? settings.error?.message ?? "Opening source…"}
+      </p>
+    );
+  return (
+    <>
+      <Link to="/t/$slug" params={{ slug }}>
+        Back to note
+      </Link>
+      <Suspense fallback={<p role="status">Loading editor…</p>}>
+        <Editor
+          key={slug}
+          slug={slug}
+          title={topic.title}
+          source={source.data}
+        />
       </Suspense>
     </>
   );
@@ -335,6 +607,18 @@ const router = createRouter({
     }),
     createRoute({
       getParentRoute: () => root,
+      path: "/roadmap/list",
+      component: TopicList,
+      validateSearch: (value: Record<string, unknown>) => ({
+        q: String(value.q ?? ""),
+        domain: String(value.domain ?? ""),
+        status: String(value.status ?? ""),
+        sort: value.sort === "recent" ? "recent" : "title",
+        ready: value.ready === true,
+      }),
+    }),
+    createRoute({
+      getParentRoute: () => root,
       path: "/search",
       component: SearchPage,
     }),
@@ -347,6 +631,11 @@ const router = createRouter({
       getParentRoute: () => root,
       path: "/health",
       component: Health,
+    }),
+    createRoute({
+      getParentRoute: () => root,
+      path: "/t/$slug/edit",
+      component: EditTopic,
     }),
     createRoute({
       getParentRoute: () => root,
