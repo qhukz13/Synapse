@@ -324,6 +324,44 @@ summary small {
   font-family: var(--font-code);
   font-variant-numeric: tabular-nums;
 }
+.finish-session-dialog {
+  width: min(32rem, calc(100vw - 2rem));
+  max-height: min(80vh, 42rem);
+  padding: 1.4rem;
+  color: var(--fg-1);
+  background: var(--bg-2);
+  border: 1px solid var(--border-2);
+  border-radius: 12px;
+  box-shadow: 0 24px 80px #0009;
+}
+.finish-session-dialog::backdrop {
+  background: #080b12aa;
+  backdrop-filter: blur(3px);
+}
+.finish-session-dialog form {
+  display: grid;
+  gap: 0.8rem;
+}
+.finish-session-dialog h2,
+.finish-session-dialog p {
+  margin: 0;
+}
+.finish-session-dialog textarea {
+  min-height: 8rem;
+  resize: vertical;
+  padding: 0.7rem;
+  color: var(--fg-1);
+  background: var(--bg-1);
+  border: 1px solid var(--border-2);
+  border-radius: 7px;
+  font: inherit;
+}
+.finish-session-dialog form > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
 .study-timer .timer-streak {
   display: grid;
   gap: 3px;
@@ -386,6 +424,15 @@ summary small {
 }
 .session-history small {
   display: block;
+}
+.session-note {
+  flex: 1 0 100%;
+  margin: 0;
+  padding: 0.65rem 0.8rem;
+  color: var(--fg-2);
+  background: var(--bg-2);
+  border-left: 2px solid var(--accent);
+  white-space: pre-wrap;
 }
 .session-corrections {
   flex: 1 0 100%;

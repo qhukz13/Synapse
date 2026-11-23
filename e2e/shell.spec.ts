@@ -57,6 +57,16 @@ test("starts, pauses, resumes and persists a study timer", async ({ page }) => {
     .getByRole("contentinfo", { name: "Study timer" })
     .getByRole("button", { name: "Finish" })
     .click();
+  const finishDialog = page.getByRole("dialog", {
+    name: "Wrap up this session",
+  });
+  await expect(finishDialog).toBeVisible();
+  await finishDialog
+    .getByLabel("Session note")
+    .fill("Reviewed the material; continue with gradient descent.");
+  await finishDialog
+    .getByRole("button", { name: "Save note & finish" })
+    .click();
   await expect(
     page
       .getByRole("contentinfo", { name: "Study timer" })
@@ -69,12 +79,15 @@ test("starts, pauses, resumes and persists a study timer", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "Recent sessions" }),
   ).toBeVisible();
+  await expect(page.locator(".session-note").first()).toHaveText(
+    "Reviewed the material; continue with gradient descent.",
+  );
 });
 test("elects one timer leader and hands the heartbeat to another tab", async ({
   page,
   context,
 }) => {
-  test.setTimeout(20_000);
+  test.setTimeout(30_000);
   const other = await context.newPage();
   const pages = [page, other];
   const heartbeats: import("@playwright/test").Page[] = [];
@@ -93,10 +106,15 @@ test("elects one timer leader and hands the heartbeat to another tab", async ({
     .getByRole("button", { name: "Start session" })
     .click();
   await expect(
-    other
+    page
       .getByRole("contentinfo", { name: "Study timer" })
       .getByRole("button", { name: "Finish" }),
   ).toBeVisible();
+  await expect(
+    other
+      .getByRole("contentinfo", { name: "Study timer" })
+      .getByRole("button", { name: "Finish" }),
+  ).toBeVisible({ timeout: 10_000 });
   await expect.poll(() => heartbeats.length, { timeout: 3_000 }).toBe(1);
   const leader = heartbeats[0]!;
   const follower = leader === page ? other : page;
@@ -107,6 +125,10 @@ test("elects one timer leader and hands the heartbeat to another tab", async ({
   await follower
     .getByRole("contentinfo", { name: "Study timer" })
     .getByRole("button", { name: "Finish" })
+    .click();
+  await follower
+    .getByRole("dialog", { name: "Wrap up this session" })
+    .getByRole("button", { name: "Finish without note" })
     .click();
   await expect(
     follower

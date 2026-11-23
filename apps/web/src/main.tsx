@@ -143,9 +143,20 @@ function StudyTimer() {
       streak: { current: number; longest: number };
     }>("stats/study", true, 30_000);
   const [now, setNow] = useState(Date.now());
+  const [finishNoteOpen, setFinishNoteOpen] = useState(false);
+  const [finishNote, setFinishNote] = useState("");
+  const [finishError, setFinishError] = useState("");
+  const [finishing, setFinishing] = useState(false);
+  const finishDialog = useRef<HTMLDialogElement>(null);
   const lastInput = useRef(Date.now());
   const tabId = useRef(Math.random().toString(36).slice(2));
   const active = session.data;
+  useEffect(() => {
+    const dialog = finishDialog.current;
+    if (!dialog) return;
+    if (finishNoteOpen && !dialog.open) dialog.showModal();
+    else if (!finishNoteOpen && dialog.open) dialog.close();
+  }, [finishNoteOpen]);
   useEffect(() => {
     const channel =
       typeof BroadcastChannel === "undefined"
@@ -291,7 +302,10 @@ function StudyTimer() {
       wake?.();
     };
   }, [active?.id, active?.state]);
-  const act = async (action: "start" | "pause" | "resume" | "stop") => {
+  const act = async (
+    action: "start" | "pause" | "resume" | "stop",
+    note?: string,
+  ) => {
     const response =
       action === "start"
         ? await fetch("/api/sessions", {
@@ -302,11 +316,28 @@ function StudyTimer() {
         : await fetch(`/api/sessions/${active!.id}/${action}`, {
             method: "POST",
             headers: { "x-synapse": "1", "content-type": "application/json" },
-            body: "{}",
+            body: JSON.stringify(note === undefined ? {} : { note }),
           });
     if (response.ok) {
       await client.invalidateQueries();
       lastInput.current = Date.now();
+      if (action === "stop") {
+        setFinishNoteOpen(false);
+        setFinishNote("");
+        setFinishError("");
+      }
+    } else {
+      const body = await response.json().catch(() => ({}));
+      setFinishError(body.message ?? "Could not finish the study session.");
+    }
+  };
+  const finish = async (note?: string) => {
+    setFinishing(true);
+    setFinishError("");
+    try {
+      await act("stop", note);
+    } finally {
+      setFinishing(false);
     }
   };
   const elapsed =
@@ -372,13 +403,13 @@ function StudyTimer() {
       {active?.state === "running" && (
         <>
           <button onClick={() => void act("pause")}>Pause</button>
-          <button onClick={() => void act("stop")}>Finish</button>
+          <button onClick={() => setFinishNoteOpen(true)}>Finish</button>
         </>
       )}
       {active?.state === "paused" && (
         <>
           <button onClick={() => void act("resume")}>Resume</button>
-          <button onClick={() => void act("stop")}>Finish</button>
+          <button onClick={() => setFinishNoteOpen(true)}>Finish</button>
         </>
       )}
       {active?.state === "paused" &&
@@ -402,6 +433,56 @@ function StudyTimer() {
             Count idle time
           </button>
         )}
+      <dialog
+        ref={finishDialog}
+        className="finish-session-dialog"
+        aria-labelledby="finish-session-title"
+        onCancel={(event) => {
+          event.preventDefault();
+          if (!finishing) setFinishNoteOpen(false);
+        }}
+      >
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void finish(finishNote.trim() || undefined);
+          }}
+        >
+          <h2 id="finish-session-title">Wrap up this session</h2>
+          <p>Add a short note about what you learned or where to continue.</p>
+          <label htmlFor="finish-session-note">Session note</label>
+          <textarea
+            id="finish-session-note"
+            value={finishNote}
+            maxLength={2000}
+            rows={5}
+            placeholder="Key ideas, questions, or the next step…"
+            autoFocus
+            onChange={(event) => setFinishNote(event.target.value)}
+          />
+          <small>{finishNote.length}/2000</small>
+          {finishError && <p role="alert">{finishError}</p>}
+          <div>
+            <button
+              type="button"
+              disabled={finishing}
+              onClick={() => setFinishNoteOpen(false)}
+            >
+              Keep studying
+            </button>
+            <button
+              type="button"
+              disabled={finishing}
+              onClick={() => void finish()}
+            >
+              {finishing ? "Finishing…" : "Finish without note"}
+            </button>
+            <button type="submit" disabled={finishing}>
+              {finishing ? "Saving…" : "Save note & finish"}
+            </button>
+          </div>
+        </form>
+      </dialog>
     </footer>
   );
 }
@@ -640,6 +721,7 @@ function StudyHistory() {
               {fmt(item.durationMs)}
               <small>{item.state}</small>
             </span>
+            {item.note && <p className="session-note">{item.note}</p>}
             {item.segments.length > 0 && (
               <details className="session-corrections">
                 <summary>Adjust recorded time</summary>

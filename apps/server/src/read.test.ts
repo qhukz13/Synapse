@@ -99,10 +99,16 @@ it("persists topic-linked study sessions through the local API", async () => {
         method: "POST",
         url: `/api/sessions/${session.id}/stop`,
         headers: writeHeaders,
-        payload: {},
+        payload: { note: "Review gradient descent next." },
       })
     ).statusCode,
   ).toBe(200);
+  const history = (
+    await ctx.app.inject({ url: "/api/sessions", headers })
+  ).json() as { id: string; note: string | null }[];
+  expect(history.find((item) => item.id === session.id)?.note).toBe(
+    "Review gradient descent next.",
+  );
 });
 it("returns deterministic recommendations and persists resource completion", async () => {
   const first = (
