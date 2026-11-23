@@ -40,10 +40,11 @@ const segment = (value: string) => {
 export function registerNotes(ctx: Context, writer: WriteCoordinator) {
   const { app, config, state, topic, work } = ctx;
   app.get("/api/personal-notes", (request) => {
-    const { q, scope, domain, stage } = z
+    const { q, scope, aboutSlug, domain, stage } = z
       .object({
         q: z.string().max(300).default(""),
         scope: z.enum(["general", "topic", "project", "legacy"]).optional(),
+        aboutSlug: z.string().max(160).optional(),
         domain: z.string().max(100).optional(),
         stage: z.coerce.number().int().positive().optional(),
       })
@@ -55,6 +56,7 @@ export function registerNotes(ctx: Context, writer: WriteCoordinator) {
         const value = String(note.fm.meta.scope ?? "legacy");
         return (
           (!scope || value === scope) &&
+          (!aboutSlug || note.about.includes(aboutSlug)) &&
           (!domain || note.domain === domain) &&
           (stage === undefined || note.stage === stage) &&
           (!matches || matches.has(note.slug))

@@ -421,6 +421,16 @@ it("creates and saves personal notes through guarded Markdown writes", async () 
     expect(original).toContain("type: note\nscope: topic");
     expect(original).toContain('"[[Vectors]]"');
     expect(original).toContain("created:");
+    expect(
+      (
+        await writable.app.inject({
+          url: "/api/personal-notes?aboutSlug=vectors",
+          headers,
+        })
+      )
+        .json()
+        .map((item: { slug: string }) => item.slug),
+    ).toContain(result.slug);
 
     const collision = await writable.app.inject({
       method: "POST",

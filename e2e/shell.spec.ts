@@ -35,6 +35,11 @@ test("creates, autosaves and searches a scoped personal note", async ({
   await expect(
     reopened.getByRole("textbox", { name: "Markdown note" }),
   ).toHaveValue(new RegExp(pagehideSentence));
+  await reopened.getByRole("link", { name: "Vectors" }).click();
+  await reopened.getByText(/^Personal notes \(\d+\)$/).click();
+  await expect(
+    reopened.getByRole("link", { name: new RegExp(title) }),
+  ).toBeVisible();
   await reopened.goto("/notes");
   await reopened
     .getByRole("searchbox", { name: "Search personal notes" })
@@ -221,16 +226,20 @@ test("uses vault search, reads a note and follows a prerequisite", async ({
       .getByRole("heading", { name: "Linear Regression", exact: true })
       .first(),
   ).toBeVisible();
-  await expect(page.locator(".note-properties")).toBeVisible();
-  const properties = page.locator(".note-properties");
+  const properties = page.locator(".note-properties").first();
+  await expect(properties).toBeVisible();
   await expect(properties).toContainText("machine-learning");
   await expect(
     properties.getByRole("link", { name: "Dot Products" }),
   ).toBeVisible();
-  await page.getByText(/^Properties \(\d+\)$/).click();
+  await page
+    .getByText(/^Properties \(\d+\)$/)
+    .first()
+    .click();
   await page
     .locator("summary")
     .filter({ hasText: /^Prerequisites$/ })
+    .first()
     .click();
   await page
     .getByRole("link", { name: /Dot Products/ })

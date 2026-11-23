@@ -1877,6 +1877,9 @@ function Reader() {
     data = summary(),
     note = query<Topic & { body: string; checkboxHash: string | null }>(
       "topics/" + encodeURIComponent(slug),
+    ),
+    personalNotes = query<PersonalNoteRow[]>(
+      `personal-notes?aboutSlug=${encodeURIComponent(slug)}`,
     );
   useEffect(() => {
     document.title = (note.data?.title ?? "Reading") + " · Synapse";
@@ -1991,6 +1994,26 @@ function Reader() {
           <p>This note lists no resources.</p>
         )}
       </details>
+      {n.kind !== "note" && (
+        <details>
+          <summary>Personal notes ({personalNotes.data?.length ?? 0})</summary>
+          {personalNotes.data?.length ? (
+            <ul className="rows">
+              {personalNotes.data.map((personalNote) => (
+                <li key={personalNote.slug}>
+                  <Link to="/notes/$slug" params={{ slug: personalNote.slug }}>
+                    {personalNote.title}
+                    <small>{personalNote.path}</small>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>No personal notes are associated with this topic.</p>
+          )}
+          <Link to="/notes">Open personal notes</Link>
+        </details>
+      )}
       <details>
         <summary>Practice ({n.exercises.length})</summary>
         {n.exercises.length ? (
@@ -2268,6 +2291,7 @@ function PersonalNotePage() {
     path: string;
     hash: string;
     text: string;
+    about: string[];
   }>(`personal-notes/${encodeURIComponent(slug)}`);
   const [draft, setDraft] = useState<string | null>(null);
   const [baseHash, setBaseHash] = useState("");
@@ -2348,6 +2372,19 @@ function PersonalNotePage() {
     <>
       <div className="crumb">
         <Link to="/notes">Personal notes</Link> / {note.data.path}
+        {note.data.about.map((owner) => {
+          const target = access.data?.topics.find(
+            (item) => item.slug === owner,
+          );
+          return target ? (
+            <span key={owner}>
+              {" · "}
+              <Link to="/t/$slug" params={{ slug: owner }}>
+                {target.title}
+              </Link>
+            </span>
+          ) : null;
+        })}
       </div>
       <header className="personal-note-heading">
         <div>
