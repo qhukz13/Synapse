@@ -527,7 +527,7 @@ function Properties({ note, topics }: { note: Topic; topics: TopicRow[] }) {
   const entries = Object.entries(note.fm.meta);
   if (!entries.length)
     return (
-      <details>
+      <details open>
         <summary>Properties</summary>
         <p>
           {note.fm.error
@@ -555,7 +555,7 @@ function Properties({ note, topics }: { note: Topic; topics: TopicRow[] }) {
     return String(value);
   }
   return (
-    <details>
+    <details open>
       <summary>Properties ({entries.length})</summary>
       <dl className="note-properties">
         {entries.map(([key, value]) => (
@@ -645,7 +645,7 @@ function Reader() {
           Metadata issue on line {n.fm.line}. {n.fm.error}
         </p>
       )}
-      <Properties note={n} topics={data.data?.topics ?? []} />
+      <Properties key={slug} note={n} topics={data.data?.topics ?? []} />
       {prereqs &&
         (["met", "unmet", "laterInPath", "missing"] as const).some(
           (key) => prereqs[key].length > 0,

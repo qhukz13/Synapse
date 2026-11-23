@@ -28,7 +28,7 @@ test("uses vault search, reads a note and follows a prerequisite", async ({
       .getByRole("heading", { name: "Linear Regression", exact: true })
       .first(),
   ).toBeVisible();
-  await page.getByText(/^Properties \(\d+\)$/).click();
+  await expect(page.locator(".note-properties")).toBeVisible();
   const properties = page.locator(".note-properties");
   await expect(properties).toContainText("machine-learning");
   await expect(
