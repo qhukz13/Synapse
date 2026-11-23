@@ -15,5 +15,11 @@
     "@noble/hashes": "^1.8",
     "@js-temporal/polyfill": "^0.5"
   },
-  "exports": "./src/index.ts"
+  "exports": {
+    ".": "./src/index.ts",
+    "./view": "./src/view.ts",
+    "./status": "./src/status.ts",
+    "./patch": "./src/patch.ts",
+    "./exercise-match": "./src/parse/exercise-match.ts"
+  }
 }

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { prepareSample } from "./sample.mjs";
 await prepareSample();
+process.env.SYNAPSE_DEV = "1";
 const children = [
   spawn(
     "node",

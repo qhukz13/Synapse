@@ -34,6 +34,7 @@ async function verify() {
   const sibling = fileURLToPath(new URL('../../../../Learning-ML-AI/AI-ML-Vault/', import.meta.url))
   const root = path.resolve(values.vault || process.env.SYNAPSE_VERIFY_VAULT || sibling)
   const before = await snapshotVault(root)
+  let failure: unknown
   try {
     const scan = await scanVault(root)
     const index = buildIndex(scan.files, {
@@ -71,11 +72,13 @@ async function verify() {
       }
       if (differences.length > 0) throw new Error('Discovery baseline differs:\n' + differences.join('\n'))
     }
-  } finally {
-    const changes = compareSnapshots(before, await snapshotVault(root))
-    console.log(JSON.stringify({ integrity: changes }))
-    if (changes.created || changes.removed || changes.modified) throw new Error('Files changed during read-only verification.')
+  } catch (error) {
+    failure = error
   }
+  const changes = compareSnapshots(before, await snapshotVault(root))
+  console.log(JSON.stringify({ integrity: changes }))
+  if (changes.created || changes.removed || changes.modified) throw new Error('Files changed during read-only verification.')
+  if (failure) throw failure
 }
 
 verify().catch((error: unknown) => {

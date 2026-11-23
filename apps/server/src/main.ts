@@ -1,7 +1,10 @@
-import Fastify from "fastify";
+import { createApp } from "./app";
 import { loadConfig } from "./config";
 const config = loadConfig();
-const app = Fastify();
-app.get("/api/health", async () => ({ ok: true }));
+const { app } = await createApp(config, process.env.SYNAPSE_DEV === "1");
 await app.listen(config.server);
-console.info("Synapse API listening on loopback port", config.server.port);
+console.info("Synapse listening at", app.listeningOrigin);
+for (const signal of ["SIGTERM", "SIGINT"] as const)
+  process.once(signal, () => {
+    void app.close();
+  });
