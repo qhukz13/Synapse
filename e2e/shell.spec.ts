@@ -99,6 +99,13 @@ test("reviews a course preview and undoes the approved migration", async ({
     .filter({ hasText: "01 - Test a Prediction.md" });
   await item.locator("summary").click();
   await expect(item.getByText("type: lesson", { exact: false })).toBeVisible();
+  await item.getByLabel("Difficulty").selectOption("intermediate");
+  await expect(item.getByLabel("Approve this file")).toBeDisabled();
+  await item.getByRole("button", { name: "Update preview" }).click();
+  await expect(
+    item.getByText(/Entered by you: difficulty intermediate/),
+  ).toBeVisible();
+  await expect(item.getByText(/difficulty: intermediate/)).toBeVisible();
   await item.getByLabel("Approve this file").check();
   await expect(
     review.getByRole("button", { name: "Apply approved changes" }),
@@ -110,6 +117,12 @@ test("reviews a course preview and undoes the approved migration", async ({
     .filter({ hasText: "01 - Test a Prediction.md" })
     .filter({ hasText: "applied" });
   await expect(result).toBeVisible();
+  const source = await page.evaluate(async () =>
+    fetch("/api/topics/01-test-a-prediction/source").then((response) =>
+      response.json(),
+    ),
+  );
+  expect(source.text).toContain("difficulty: intermediate");
   page.once("dialog", (dialog) => void dialog.accept());
   await result.getByRole("button", { name: "Undo this change" }).click();
   await expect(

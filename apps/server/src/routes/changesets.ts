@@ -39,6 +39,9 @@ function previewHash(item: Pick<Proposal, "targetPath" | "after">) {
       : item.after,
   );
 }
+function previewResponse({ op: _, ...item }: Proposal) {
+  return { ...item, afterHash: previewHash(item) };
+}
 function proposals({ work, config }: Context, kind: Kind): Proposal[] {
   const files = new Map(work.scan.files.map((file) => [file.path, file]));
   const result: Proposal[] = [];
@@ -211,6 +214,37 @@ function proposals({ work, config }: Context, kind: Kind): Proposal[] {
   return result;
 }
 
+const courseEdits = z
+  .object({
+    difficulty: z.enum(["beginner", "intermediate", "advanced"]).optional(),
+    importance: z.enum(["low", "medium", "high"]).optional(),
+  })
+  .strict();
+type CourseEdits = z.infer<typeof courseEdits>;
+function withCourseEdits(item: Proposal, edits: CourseEdits): Proposal {
+  if (item.op.type !== "addFrontmatter")
+    throw new WriteError(
+      422,
+      "VALIDATION",
+      "These fields are available only for course metadata.",
+    );
+  const fields = { ...item.op.fields };
+  if (edits.difficulty) fields.difficulty = edits.difficulty;
+  if (edits.importance) fields.importance = edits.importance;
+  const supplied = [
+    edits.difficulty && "difficulty " + edits.difficulty,
+    edits.importance && "importance " + edits.importance,
+  ].filter(Boolean);
+  return {
+    ...item,
+    op: { type: "addFrontmatter", fields },
+    after: addFrontmatter(item.before, fields),
+    evidence:
+      item.evidence +
+      (supplied.length ? " Entered by you: " + supplied.join(", ") + "." : ""),
+  };
+}
+
 const approvedSchema = z
   .object({
     kind: kindSchema,
@@ -221,6 +255,7 @@ const approvedSchema = z
             issueId: z.string(),
             baseHash: z.string().regex(/^[a-f0-9]{64}$/),
             afterHash: z.string().regex(/^[a-f0-9]{64}$/),
+            edits: courseEdits.optional(),
           })
           .strict(),
       )
@@ -257,11 +292,24 @@ export function registerChangesets(ctx: Context, writer: WriteCoordinator) {
   reconcile();
   app.get("/api/vault-health/proposals", (request) => {
     const { kind } = z.object({ kind: kindSchema }).parse(request.query);
-    return proposals(ctx, kind).map(({ op: _, ...item }) => ({
-      ...item,
-      afterHash: previewHash(item),
-    }));
+    return proposals(ctx, kind).map(previewResponse);
   });
+  app.get<{ Params: { id: string } }>(
+    "/api/vault-health/course-preview/:id",
+    (request) => {
+      const edits = courseEdits.parse(request.query);
+      const original = proposals(ctx, "python-course-migration").find(
+        (item) => item.issueId === request.params.id,
+      );
+      if (!original)
+        throw new WriteError(
+          404,
+          "NOT_FOUND",
+          "This course proposal is no longer available.",
+        );
+      return { ...previewResponse(withCourseEdits(original, edits)), edits };
+    },
+  );
   app.get("/api/changesets", history);
   app.post("/api/changesets/apply", async (request) => {
     if (!config.allowVaultWrites)
@@ -280,7 +328,17 @@ export function registerChangesets(ctx: Context, writer: WriteCoordinator) {
       proposals(ctx, input.kind).map((item) => [item.issueId, item]),
     );
     const selected = input.items.map((item) => {
-      const proposal = current.get(item.issueId);
+      const original = current.get(item.issueId);
+      if (item.edits && input.kind !== "python-course-migration")
+        throw new WriteError(
+          422,
+          "VALIDATION",
+          "This workflow does not accept course fields.",
+        );
+      const proposal =
+        original && item.edits
+          ? withCourseEdits(original, item.edits)
+          : original;
       if (
         !proposal ||
         proposal.baseHash !== item.baseHash ||

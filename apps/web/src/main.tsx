@@ -811,6 +811,7 @@ type RepairPreview = {
   baseHash: string;
   afterHash: string;
   targetPath?: string;
+  edits?: { difficulty?: string; importance?: string };
 };
 type RepairHistory = {
   id: string;
@@ -819,10 +820,95 @@ type RepairHistory = {
   error: string | null;
   target_path: string | null;
 };
+function CoursePreviewFields({
+  item,
+  onPreview,
+  onDirty,
+  busy,
+}: {
+  item: RepairPreview;
+  onPreview: (item: RepairPreview) => void;
+  onDirty: () => void;
+  busy: boolean;
+}) {
+  const [difficulty, setDifficulty] = useState(item.edits?.difficulty ?? ""),
+    [importance, setImportance] = useState(item.edits?.importance ?? ""),
+    [pending, setPending] = useState(false),
+    [error, setError] = useState("");
+  async function preview() {
+    setPending(true);
+    setError("");
+    try {
+      const fields = new URLSearchParams();
+      if (difficulty) fields.set("difficulty", difficulty);
+      if (importance) fields.set("importance", importance);
+      const response = await fetch(
+        "/api/vault-health/course-preview/" +
+          encodeURIComponent(item.issueId) +
+          "?" +
+          fields,
+      );
+      if (!response.ok) throw Error((await response.json()).message);
+      onPreview((await response.json()) as RepairPreview);
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not update preview",
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+  return (
+    <div className="view-controls">
+      <label>
+        Difficulty{" "}
+        <select
+          value={difficulty}
+          disabled={pending || busy}
+          onChange={(e) => {
+            setDifficulty(e.target.value);
+            onDirty();
+          }}
+        >
+          <option value="">Omit</option>
+          <option>beginner</option>
+          <option>intermediate</option>
+          <option>advanced</option>
+        </select>
+      </label>
+      <label>
+        Importance{" "}
+        <select
+          value={importance}
+          disabled={pending || busy}
+          onChange={(e) => {
+            setImportance(e.target.value);
+            onDirty();
+          }}
+        >
+          <option value="">Omit</option>
+          <option>low</option>
+          <option>medium</option>
+          <option>high</option>
+        </select>
+      </label>
+      <button
+        type="button"
+        disabled={pending || busy}
+        onClick={() => void preview()}
+      >
+        Update preview
+      </button>
+      {error && <p role="alert">{error}</p>}
+    </div>
+  );
+}
 function ChangeReview() {
   const [kind, setKind] = useState<
     "health-fix" | "python-course-migration" | "notes-migration"
   >("health-fix");
+  const [dirty, setDirty] = useState<Record<string, boolean>>({});
+  const [edited, setEdited] = useState<Record<string, RepairPreview>>({});
   const [selected, select] = useState<RepairPreview[]>([]),
     [confirmed, confirm] = useState(false);
   const [busy, setBusy] = useState(false),
@@ -841,6 +927,8 @@ function ChangeReview() {
       });
       if (!response.ok) throw Error((await response.json()).message);
       select([]);
+      setEdited({});
+      setDirty({});
       confirm(false);
       await client.invalidateQueries();
       setMessage("Change recorded. Review the result below.");
@@ -902,49 +990,79 @@ function ChangeReview() {
       {!writable && (
         <p>The vault is read-only. You can inspect each preview.</p>
       )}
-      {preview.data?.map((item) => (
-        <details className="change-item" key={item.issueId}>
-          <summary>{item.path}</summary>
-          <p>{item.evidence}</p>
-          {item.targetPath ? (
-            <dl className="note-properties">
-              <div>
-                <dt>Current path</dt>
-                <dd>{item.path}</dd>
+      {preview.data
+        ?.map((original) =>
+          edited[original.issueId]?.baseHash === original.baseHash
+            ? edited[original.issueId]!
+            : original,
+        )
+        .map((item) => (
+          <details className="change-item" key={item.issueId}>
+            <summary>{item.path}</summary>
+            <p>{item.evidence}</p>
+            {kind === "python-course-migration" && (
+              <CoursePreviewFields
+                item={item}
+                busy={busy}
+                onDirty={() => {
+                  setDirty((previous) => ({
+                    ...previous,
+                    [item.issueId]: true,
+                  }));
+                  toggle(item, false);
+                }}
+                onPreview={(next) => {
+                  setDirty((previous) => ({
+                    ...previous,
+                    [next.issueId]: false,
+                  }));
+                  setEdited((previous) => ({
+                    ...previous,
+                    [next.issueId]: next,
+                  }));
+                  toggle(item, false);
+                }}
+              />
+            )}
+            {item.targetPath ? (
+              <dl className="note-properties">
+                <div>
+                  <dt>Current path</dt>
+                  <dd>{item.path}</dd>
+                </div>
+                <div>
+                  <dt>Destination</dt>
+                  <dd>{item.targetPath}</dd>
+                </div>
+              </dl>
+            ) : (
+              <div className="change-diff">
+                <div>
+                  <h3>Before</h3>
+                  <pre>{item.before}</pre>
+                </div>
+                <div>
+                  <h3>After</h3>
+                  <pre>{item.after}</pre>
+                </div>
               </div>
-              <div>
-                <dt>Destination</dt>
-                <dd>{item.targetPath}</dd>
-              </div>
-            </dl>
-          ) : (
-            <div className="change-diff">
-              <div>
-                <h3>Before</h3>
-                <pre>{item.before}</pre>
-              </div>
-              <div>
-                <h3>After</h3>
-                <pre>{item.after}</pre>
-              </div>
-            </div>
-          )}
-          <label className="change-approval">
-            <input
-              type="checkbox"
-              disabled={!writable || busy}
-              checked={selected.some(
-                (entry) =>
-                  entry.issueId === item.issueId &&
-                  entry.baseHash === item.baseHash &&
-                  entry.afterHash === item.afterHash,
-              )}
-              onChange={(e) => toggle(item, e.target.checked)}
-            />{" "}
-            Approve this file
-          </label>
-        </details>
-      ))}
+            )}
+            <label className="change-approval">
+              <input
+                type="checkbox"
+                disabled={!writable || busy || !!dirty[item.issueId]}
+                checked={selected.some(
+                  (entry) =>
+                    entry.issueId === item.issueId &&
+                    entry.baseHash === item.baseHash &&
+                    entry.afterHash === item.afterHash,
+                )}
+                onChange={(e) => toggle(item, e.target.checked)}
+              />{" "}
+              Approve this file
+            </label>
+          </details>
+        ))}
       {!!selected.length && (
         <ul>
           {selected.map((item) => (
@@ -970,11 +1088,14 @@ function ChangeReview() {
               void mutate("changesets/apply", {
                 kind,
                 confirm: true,
-                items: selected.map(({ issueId, baseHash, afterHash }) => ({
-                  issueId,
-                  baseHash,
-                  afterHash,
-                })),
+                items: selected.map(
+                  ({ issueId, baseHash, afterHash, edits }) => ({
+                    issueId,
+                    baseHash,
+                    afterHash,
+                    edits,
+                  }),
+                ),
               })
             }
           >

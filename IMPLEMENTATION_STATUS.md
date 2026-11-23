@@ -35,8 +35,10 @@ Finish M5 acceptance including manual Obsidian concurrency and recovery verifica
 
 Vault Health now previews folder-link repairs, prerequisites already documented in the body, and Python Course metadata additions. The real vault produced nine repair previews and 25 course previews. Each item shows its evidence and the original and proposed contents. Apply requires individual file selection, explicit batch confirmation, a writable configuration, and matching hashes for the source and preview. The journal records the backups and supplies the original bytes for undo. A stale approval before apply requires a fresh preview. A conflicting change after the batch starts is recorded against the affected item.
 
-The 122-check suite passed, including isolated apply and byte-exact undo, stale approvals, and read-only previews. The remaining M6 work includes additional repair families, editable proposal values and migration destinations, and broader post-apply acceptance coverage. M7 study sessions remain pending.
+The 122-check suite passed, including isolated apply and byte-exact undo, stale approvals, and read-only previews. The remaining M6 work includes additional repair families, editable legacy-note destinations, and broader post-apply acceptance coverage. M7 study sessions remain pending.
 
 Post-apply validation compares the indexed file with the reviewed result and checks that the targeted issue is gone. An isolated regression verifies rollback when a repair leaves its issue present. A newer intervening edit is reported for review.
 
 Legacy note reorganization now proposes the destination while retaining the original filename. The real vault returns 18 read-only previews. Isolated tests verify byte-exact move and undo, journal reconciliation after restart, and stable SQLite identity.
+
+Course migration previews now let the user supply optional difficulty and importance. Changing either field clears that file’s approval until a fresh preview is generated. The selected values are labeled as user-entered and included in the hash that is checked on apply.
