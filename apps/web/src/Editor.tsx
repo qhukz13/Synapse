@@ -94,6 +94,7 @@ export default function Editor({ slug, title, source }: Props) {
         <p role="status">The file changed on disk. Your draft is still open.</p>
       )}
       <form
+        className="curriculum-editor-form"
         onSubmit={(event) => {
           event.preventDefault();
           if (!saving && !conflict && draft !== base.text) void save();

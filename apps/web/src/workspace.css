@@ -206,6 +206,10 @@ summary small {
 .source-editor .cm-cursor {
   border-color: var(--fg-1);
 }
+.curriculum-editor-form > .view-controls {
+  position: relative;
+  z-index: 31;
+}
 .studio pre {
   max-width: 100%;
   overflow: auto;
@@ -301,6 +305,101 @@ summary small {
   width: auto;
   margin: 0;
   accent-color: var(--accent);
+}
+.quick-note-fab {
+  position: fixed;
+  z-index: 30;
+  inset: auto auto 24px 236px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  padding: 0 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border-2));
+  border-radius: 999px;
+  color: var(--fg-1);
+  background: var(--bg-2);
+  box-shadow: 0 8px 24px #0005;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.quick-note-fab svg {
+  color: var(--accent);
+}
+.quick-note-fab.is-dragging {
+  z-index: 60;
+  cursor: grabbing;
+  box-shadow: 0 12px 34px #0008;
+}
+.quick-note-dialog {
+  width: min(92vw, 38rem);
+  max-width: 38rem;
+  max-height: min(88vh, 48rem);
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--border-2);
+  border-radius: 12px;
+  color: var(--fg-1);
+  background: var(--bg-1);
+  box-shadow: 0 24px 70px #0009;
+}
+.quick-note-dialog::backdrop {
+  background: #05070bd1;
+  backdrop-filter: blur(3px);
+}
+.quick-note-dialog form {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1.1rem;
+}
+.quick-note-dialog header,
+.quick-note-dialog footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.quick-note-dialog header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+.quick-note-dialog header .eyebrow {
+  margin: 0 0 0.25rem;
+}
+.quick-note-dialog label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--fg-2);
+  font-size: 0.82rem;
+}
+.quick-note-dialog textarea {
+  min-height: 9rem;
+  resize: vertical;
+  font: 0.9rem/1.55 var(--font-code);
+}
+.quick-note-dialog [role="alert"] {
+  margin: 0;
+  color: var(--danger);
+}
+.quick-note-location,
+.quick-note-saved {
+  margin: 0;
+  color: var(--fg-3);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+.quick-note-saved {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.quick-note-saved a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
 }
 .study-timer {
   position: fixed;
@@ -473,6 +572,12 @@ summary small {
   color: var(--fg-3);
 }
 @media (max-width: 767px) {
+  .quick-note-fab {
+    inset: auto auto calc(132px + env(safe-area-inset-bottom)) 12px;
+  }
+  .quick-note-dialog form {
+    padding: 0.9rem;
+  }
   .study-timer {
     inset: auto 8px 72px 8px;
     justify-content: space-between;
@@ -908,6 +1013,7 @@ summary small {
 .dashboard-resources {
   display: grid;
   gap: 0;
+  min-width: 0;
   list-style: none;
   margin: 8px 0 0;
   padding: 0;
@@ -1152,6 +1258,182 @@ summary small {
   margin: 0.2rem 0 0 1.5rem;
   color: var(--fg-3);
 }
+.practice-library-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+.practice-library-heading h1,
+.practice-library-heading p {
+  margin-top: 0;
+}
+.practice-library-heading p:not(.eyebrow) {
+  max-width: 48rem;
+  color: var(--fg-3);
+}
+.practice-library-heading > a,
+.practice-open-link,
+.project-status-suggestion > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
+.practice-library-summary {
+  display: flex;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+.practice-library-summary > div {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 9rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border-1);
+  border-radius: 8px;
+  background: var(--bg-1);
+}
+.practice-library-summary strong {
+  color: var(--fg-1);
+  font-size: 1.2rem;
+}
+.practice-library-summary span,
+.practice-overview-meta {
+  color: var(--fg-3);
+  font-size: 0.78rem;
+}
+.practice-library-controls {
+  display: flex;
+  gap: 0.6rem;
+  margin: 1rem 0;
+}
+.practice-library-controls > input {
+  flex: 1;
+  min-width: 0;
+}
+.practice-library-controls [role="group"] {
+  display: flex;
+  gap: 0.35rem;
+}
+.practice-library-controls button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.practice-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 21rem), 1fr));
+  gap: 0.8rem;
+}
+.practice-overview-card {
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--border-1);
+  border-radius: 9px;
+  background: var(--bg-1);
+}
+.practice-overview-card > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+.practice-overview-card h2 {
+  margin: 0.2rem 0 0;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+.practice-overview-card .panel-kicker {
+  margin: 0;
+}
+.practice-overview-meta {
+  margin: 0;
+}
+.checkpoint-badge {
+  flex: none;
+  padding: 0.25rem 0.45rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border-1));
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 0.7rem;
+}
+.practice-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+.practice-progress-row small {
+  flex: none;
+  color: var(--fg-3);
+  font-size: 0.72rem;
+}
+.practice-progress-track {
+  flex: 1;
+  min-width: 0;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--bg-3);
+}
+.practice-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+.project-status-suggestion {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, var(--border-1));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--warning) 6%, var(--bg-1));
+  font-size: 0.8rem;
+}
+.project-status-suggestion > span,
+.project-status-suggestion > a,
+.concepts-practiced small,
+.practice-attachments small {
+  color: var(--fg-3);
+  font-size: 0.75rem;
+}
+.concepts-practiced,
+.practice-attachments {
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+}
+.concepts-practiced ul,
+.practice-attachments ul {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.concepts-practiced li,
+.practice-attachments li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.concepts-practiced li > a,
+.concepts-practiced li > span,
+.practice-attachments li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.practice-open-link {
+  justify-self: start;
+  margin-top: 0.15rem;
+  font-size: 0.82rem;
+}
 .exercise-orphans {
   margin-top: 1rem;
   padding-top: 0.7rem;
@@ -1207,6 +1489,7 @@ summary small {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  min-width: 0;
   padding: 8px 0;
   border-top: 1px solid var(--border-1);
 }
@@ -1343,6 +1626,19 @@ summary small {
   }
 }
 @media (max-width: 600px) {
+  .practice-library-heading {
+    flex-direction: column;
+  }
+  .practice-library-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .practice-library-controls [role="group"] {
+    flex-wrap: wrap;
+  }
+  .practice-library-summary {
+    flex-wrap: wrap;
+  }
   .dashboard {
     padding-bottom: 150px;
   }

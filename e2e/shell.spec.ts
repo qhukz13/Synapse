@@ -94,6 +94,54 @@ test("persists app-only exercise ticks across reloads", async ({ page }) => {
   await expect(reloaded).toBeChecked({ checked: initial });
 });
 
+test("tracks project steps and suggests status without changing it", async ({
+  page,
+}) => {
+  await page.goto("/practice");
+  await expect(page.getByRole("heading", { name: "Practice" })).toBeVisible();
+  let project = page
+    .locator(".practice-overview-card")
+    .filter({ hasText: "Calibrate a Sensor" });
+  await expect(project).toBeVisible();
+  await expect(
+    project.getByRole("progressbar", { name: /step progress/ }),
+  ).toHaveAttribute("aria-valuemax", "4");
+  await expect(project.getByText("Concepts practiced")).toBeVisible();
+  await expect(
+    project.getByRole("link", { name: "Linear Regression" }),
+  ).toBeVisible();
+
+  await project.getByRole("link", { name: "Open exercises" }).click();
+  await page.getByText(/^Practice \(\d+\/\d+ complete\)$/).click();
+  const step = page.getByRole("checkbox", {
+    name: /Enter the three measured voltages/,
+  });
+  await expect(step).not.toBeChecked();
+  await step.click();
+  await expect(step).toBeChecked();
+
+  await page.goto("/practice");
+  project = page
+    .locator(".practice-overview-card")
+    .filter({ hasText: "Calibrate a Sensor" });
+  await expect(project).toContainText("Suggested status: in-progress");
+  await expect(project).toContainText("not started");
+
+  await project.getByRole("link", { name: "Open exercises" }).click();
+  await page.getByText(/^Practice \(\d+\/\d+ complete\)$/).click();
+  const checkedStep = page.getByRole("checkbox", {
+    name: /Enter the three measured voltages/,
+  });
+  await expect(checkedStep).toBeChecked();
+  await checkedStep.click();
+  await page.goto("/practice");
+  project = page
+    .locator(".practice-overview-card")
+    .filter({ hasText: "Calibrate a Sensor" });
+  await expect(project).not.toContainText("Suggested status:");
+  await expect(project).toContainText("not started");
+});
+
 test("quick-captures, moves, renames and trashes a personal note", async ({
   page,
 }, testInfo) => {
@@ -151,6 +199,46 @@ test("quick-captures, moves, renames and trashes a personal note", async ({
   await expect(
     page.getByRole("link", { name: new RegExp(`${token} renamed`) }),
   ).toHaveCount(0);
+});
+
+test("drags the global quick-note button and saves Markdown locally", async ({
+  page,
+}, testInfo) => {
+  const title = `Floating capture ${Date.now()} ${testInfo.project.name}`;
+  const sentence = `Quick note body ${title}`;
+  await page.goto("/");
+  const button = page.getByRole("button", { name: "Quick note" });
+  const initial = await button.boundingBox();
+  expect(initial).not.toBeNull();
+  await page.mouse.move(
+    initial!.x + initial!.width / 2,
+    initial!.y + initial!.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(initial!.x + 110, initial!.y - 70, { steps: 6 });
+  await page.mouse.up();
+  const moved = await button.boundingBox();
+  expect(moved).not.toBeNull();
+  expect(moved!.x).toBeGreaterThan(initial!.x + 30);
+  expect(moved!.y).toBeLessThan(initial!.y - 30);
+
+  await page.reload();
+  const restored = await button.boundingBox();
+  expect(restored).not.toBeNull();
+  expect(restored!.x).toBeCloseTo(moved!.x, 0);
+  expect(restored!.y).toBeCloseTo(moved!.y, 0);
+  await button.click();
+  const dialog = page.getByRole("dialog", { name: "Quick note" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel("Title").fill(title);
+  await dialog.getByRole("textbox", { name: "Note" }).fill(sentence);
+  await dialog.getByRole("button", { name: "Save quick note" }).click();
+  await expect(dialog.getByText("Saved to your vault.")).toBeVisible();
+  await dialog.getByRole("link", { name: "Open note" }).click();
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+  await expect(
+    page.getByRole("textbox", { name: "Markdown note" }),
+  ).toContainText(sentence);
 });
 
 test("shows real dashboard recommendations and persists resource completion", async ({

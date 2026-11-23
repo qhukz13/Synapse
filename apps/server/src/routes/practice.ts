@@ -13,7 +13,7 @@ function similarity(left: string, right: string) {
   return (2 * shared) / (a.size + b.size);
 }
 
-export function registerPractice({ app, state, topic, nid }: Context) {
+export function registerPractice({ app, state, work, topic, nid }: Context) {
   const read = (slug: string) => {
     const note = topic(slug);
     const noteId = nid(slug);
@@ -119,6 +119,87 @@ export function registerPractice({ app, state, topic, nid }: Context) {
       ),
     };
   };
+
+  app.get("/api/practice", () => {
+    return work.index.nodes
+      .filter(
+        (note) =>
+          note.kind !== "note" &&
+          (note.exercises.length > 0 ||
+            ["project", "course-project"].includes(note.kind)),
+      )
+      .map((note) => {
+        const result = read(note.slug);
+        const total = result.exercises.length;
+        const completed = result.exercises.filter((item) => item.done).length;
+        const isProject = ["project", "course-project"].includes(note.kind);
+        const status = note.status.value;
+        const suggestedStatus =
+          isProject &&
+          total > 0 &&
+          completed === total &&
+          status !== "completed"
+            ? "completed"
+            : isProject && completed > 0 && status === "not-started"
+              ? "in-progress"
+              : null;
+        const builds = Array.isArray(note.fm.meta.builds)
+          ? note.fm.meta.builds.map(String)
+          : typeof note.fm.meta.builds === "string"
+            ? [note.fm.meta.builds]
+            : [];
+        const conceptsPracticed = builds.map((label) => {
+          const title = label.replace(/^\[\[|\]\]$/g, "");
+          const related = work.index.nodes.find(
+            (candidate) =>
+              candidate.title.toLowerCase() === title.toLowerCase(),
+          );
+          return {
+            label: title,
+            slug: related?.slug ?? null,
+            status: related?.status.value ?? null,
+          };
+        });
+        const attachments = state.db
+          .prepare(
+            "SELECT id,display_name,file_kind,availability FROM attachment WHERE owner_nid=? ORDER BY created_at",
+          )
+          .all(nid(note.slug)) as {
+          id: string;
+          display_name: string;
+          file_kind: string;
+          availability: string;
+        }[];
+        const position = work.index.learningPath.positions.find(
+          (candidate) =>
+            candidate.target.toLowerCase() === note.title.toLowerCase() ||
+            candidate.target.toLowerCase() === note.heading.toLowerCase(),
+        );
+        return {
+          slug: note.slug,
+          title: note.title,
+          kind: note.kind,
+          path: note.path,
+          domain: note.domain,
+          status,
+          statusSource: note.status.source,
+          total,
+          completed,
+          percentage: total ? Math.round((completed / total) * 100) : 0,
+          checkpoint: position?.checkpoint ?? false,
+          suggestedStatus,
+          conceptsPracticed,
+          attachments,
+        };
+      })
+      .sort(
+        (left, right) =>
+          (left.kind === "project" || left.kind === "course-project" ? 0 : 1) -
+            (right.kind === "project" || right.kind === "course-project"
+              ? 0
+              : 1) || left.title.localeCompare(right.title),
+      );
+  });
 
   app.get<{ Params: { slug: string } }>("/api/practice/:slug", (request) =>
     read(request.params.slug),

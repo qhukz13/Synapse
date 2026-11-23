@@ -125,6 +125,7 @@ export function registerNotes(ctx: Context, writer: WriteCoordinator) {
         title: titleInput,
         scope: z.enum(["general", "topic", "project"]),
         aboutSlug: z.string().optional(),
+        content: z.string().max(100_000).default(""),
       })
       .strict()
       .parse(request.body);
@@ -171,6 +172,7 @@ export function registerNotes(ctx: Context, writer: WriteCoordinator) {
       "---",
       `# ${title}`,
       "",
+      body.content.trim(),
       "",
     ].join("\n");
     const result = await writer.write({

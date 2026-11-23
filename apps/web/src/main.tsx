@@ -105,6 +105,9 @@ function Layout() {
         <Link to="/resources">
           <BookmarkCheck /> Resources
         </Link>
+        <Link to="/practice">
+          <BookOpen /> Practice
+        </Link>
         <Link to="/notes">
           <FileText /> Personal notes
         </Link>
@@ -120,7 +123,314 @@ function Layout() {
         <Outlet />
       </main>
       <StudyTimer />
+      <QuickNoteButton />
     </div>
+  );
+}
+
+type QuickNotePosition = { left: number; top: number };
+function QuickNoteButton() {
+  const settings = summary();
+  const [position, setPosition] = useState<QuickNotePosition | null>(null);
+  const positionRef = useRef<QuickNotePosition | null>(null);
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [savedSlug, setSavedSlug] = useState<string | null>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const drag = useRef<{
+    pointerId: number;
+    x: number;
+    y: number;
+    left: number;
+    top: number;
+    moved: boolean;
+  } | null>(null);
+  const suppressClick = useRef(false);
+  const clamp = (left: number, top: number) => {
+    const width = button.current?.offsetWidth ?? 132;
+    const height = button.current?.offsetHeight ?? 44;
+    return {
+      left: Math.max(8, Math.min(left, window.innerWidth - width - 8)),
+      top: Math.max(8, Math.min(top, window.innerHeight - height - 8)),
+    };
+  };
+  const setPinnedPosition = (next: QuickNotePosition, persist: boolean) => {
+    const safe = clamp(next.left, next.top);
+    positionRef.current = safe;
+    setPosition(safe);
+    if (persist) {
+      try {
+        localStorage.setItem(
+          "synapse.quick-note-position",
+          JSON.stringify(safe),
+        );
+      } catch {
+        // The button remains movable for this page view if storage is unavailable.
+      }
+    }
+  };
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(
+        localStorage.getItem("synapse.quick-note-position") ?? "null",
+      ) as QuickNotePosition | null;
+      if (saved && Number.isFinite(saved.left) && Number.isFinite(saved.top))
+        setPinnedPosition(saved, true);
+    } catch {
+      // Ignore malformed or unavailable local position state.
+    }
+    const resize = () => {
+      const current = positionRef.current;
+      if (current) setPinnedPosition(current, true);
+    };
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
+  useEffect(() => {
+    const node = dialog.current;
+    if (!node) return;
+    if (open && !node.open) node.showModal();
+    else if (!open && node.open) node.close();
+  }, [open]);
+  const defaultTitle = () => {
+    const timestamp = new Intl.DateTimeFormat("sv-SE", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    })
+      .format(new Date())
+      .replaceAll(":", "-");
+    return `Quick capture ${timestamp}`;
+  };
+  const openCapture = () => {
+    setTitle(defaultTitle());
+    setContent("");
+    setError("");
+    setSavedSlug(null);
+    setOpen(true);
+  };
+  const save = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch("/api/personal-notes", {
+        method: "POST",
+        headers: { "x-synapse": "1", "content-type": "application/json" },
+        body: JSON.stringify({
+          title,
+          scope: "general",
+          content,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok)
+        throw Error(result.message ?? "Could not save quick note.");
+      await client.invalidateQueries({ queryKey: ["personal-notes"] });
+      setSavedSlug(result.slug ?? null);
+      setContent("");
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not save quick note.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+  const pointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    drag.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      left: bounds.left,
+      top: bounds.top,
+      moved: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const pointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const current = drag.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+    const dx = event.clientX - current.x;
+    const dy = event.clientY - current.y;
+    if (!current.moved && Math.hypot(dx, dy) < 5) return;
+    current.moved = true;
+    setPinnedPosition(
+      { left: current.left + dx, top: current.top + dy },
+      false,
+    );
+  };
+  const pointerUp = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const current = drag.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+    if (current.moved) {
+      const safe = clamp(
+        current.left + event.clientX - current.x,
+        current.top + event.clientY - current.y,
+      );
+      setPinnedPosition(safe, true);
+      suppressClick.current = true;
+    }
+    drag.current = null;
+  };
+  const keyboardMove = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (
+      !event.altKey ||
+      !["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)
+    )
+      return;
+    event.preventDefault();
+    const bounds = button.current?.getBoundingClientRect();
+    if (!bounds) return;
+    const distance = event.shiftKey ? 40 : 12;
+    setPinnedPosition(
+      {
+        left:
+          bounds.left +
+          (event.key === "ArrowLeft"
+            ? -distance
+            : event.key === "ArrowRight"
+              ? distance
+              : 0),
+        top:
+          bounds.top +
+          (event.key === "ArrowUp"
+            ? -distance
+            : event.key === "ArrowDown"
+              ? distance
+              : 0),
+      },
+      true,
+    );
+  };
+  return (
+    <>
+      <button
+        ref={button}
+        type="button"
+        className={`quick-note-fab${drag.current?.moved ? " is-dragging" : ""}`}
+        style={
+          position
+            ? { left: position.left, top: position.top, bottom: "auto" }
+            : undefined
+        }
+        aria-label="Quick note"
+        aria-description="Drag to move. Use Alt and arrow keys to reposition."
+        title="Quick note · drag to move"
+        onPointerDown={pointerDown}
+        onPointerMove={pointerMove}
+        onPointerUp={pointerUp}
+        onPointerCancel={pointerUp}
+        onClick={() => {
+          if (suppressClick.current) {
+            suppressClick.current = false;
+            return;
+          }
+          openCapture();
+        }}
+        onKeyDown={keyboardMove}
+      >
+        <FileText size={17} />
+        <span>Quick note</span>
+      </button>
+      {open && (
+        <dialog
+          ref={dialog}
+          className="quick-note-dialog"
+          aria-labelledby="quick-note-title"
+          onClose={() => setOpen(false)}
+        >
+          <form onSubmit={(event) => void save(event)}>
+            <header>
+              <div>
+                <p className="eyebrow">CAPTURE TO YOUR VAULT</p>
+                <h2 id="quick-note-title">Quick note</h2>
+              </div>
+              <button
+                type="button"
+                aria-label="Close quick note"
+                onClick={() => setOpen(false)}
+              >
+                ×
+              </button>
+            </header>
+            <p className="quick-note-location">
+              Saves as a new Markdown note in{" "}
+              {settings.data?.personalNotesRoot ?? "Personal Notes"}/General.
+            </p>
+            {!settings.data?.writeEnabled && (
+              <p className="read-only-banner">
+                Vault writes are disabled. Enable them in local configuration to
+                save a quick note.
+              </p>
+            )}
+            {savedSlug ? (
+              <div role="status" className="quick-note-saved">
+                <span>Saved to your vault.</span>
+                <Link
+                  to="/notes/$slug"
+                  params={{ slug: savedSlug }}
+                  onClick={() => setOpen(false)}
+                >
+                  Open note <ArrowRight size={14} />
+                </Link>
+              </div>
+            ) : (
+              <>
+                <label>
+                  Title
+                  <input
+                    required
+                    maxLength={200}
+                    value={title}
+                    onChange={(event) => setTitle(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Note
+                  <textarea
+                    autoFocus
+                    required
+                    maxLength={100_000}
+                    rows={7}
+                    value={content}
+                    onChange={(event) => setContent(event.target.value)}
+                    placeholder="Capture an idea, question, or next step…"
+                  />
+                </label>
+                {error && <p role="alert">{error}</p>}
+                <footer>
+                  <button type="button" onClick={() => setOpen(false)}>
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={
+                      saving ||
+                      !settings.data?.writeEnabled ||
+                      !title.trim() ||
+                      !content.trim()
+                    }
+                  >
+                    {saving ? "Saving…" : "Save quick note"}
+                  </button>
+                </footer>
+              </>
+            )}
+          </form>
+        </dialog>
+      )}
+    </>
   );
 }
 
@@ -3062,6 +3372,218 @@ function Library() {
     </>
   );
 }
+type PracticeOverview = {
+  slug: string;
+  title: string;
+  kind: string;
+  path: string;
+  domain: string;
+  status: string;
+  statusSource: string;
+  total: number;
+  completed: number;
+  percentage: number;
+  checkpoint: boolean;
+  suggestedStatus: string | null;
+  conceptsPracticed: {
+    label: string;
+    slug: string | null;
+    status: string | null;
+  }[];
+  attachments: {
+    id: string;
+    display_name: string;
+    file_kind: string;
+    availability: string;
+  }[];
+};
+function PracticeLibrary() {
+  const result = query<PracticeOverview[]>("practice");
+  const [filter, setFilter] = useState<"all" | "projects">("all");
+  const [search, setSearch] = useState("");
+  const items = (result.data ?? []).filter((item) => {
+    const isProject = ["project", "course-project"].includes(item.kind);
+    return (
+      (filter === "all" || isProject) &&
+      `${item.title} ${item.domain} ${item.path}`
+        .toLowerCase()
+        .includes(search.trim().toLowerCase())
+    );
+  });
+  const stepCount = items.reduce((sum, item) => sum + item.total, 0);
+  const completedCount = items.reduce((sum, item) => sum + item.completed, 0);
+  const projectCount = items.filter((item) =>
+    ["project", "course-project"].includes(item.kind),
+  ).length;
+  return (
+    <div className="practice-library">
+      <header className="practice-library-heading">
+        <div>
+          <p className="eyebrow">LEARN BY DOING</p>
+          <h1>Practice</h1>
+          <p>
+            Exercises and project steps come from your Markdown curriculum.
+            Completion ticks persist locally; project status suggestions never
+            change your Markdown automatically.
+          </p>
+        </div>
+        <Link to="/roadmap/tree">
+          Learning path <ArrowRight size={14} />
+        </Link>
+      </header>
+      {result.error && <p role="alert">{result.error.message}</p>}
+      <section
+        className="practice-library-summary"
+        aria-label="Practice progress"
+      >
+        <div>
+          <strong>
+            {completedCount} / {stepCount}
+          </strong>
+          <span>steps complete</span>
+        </div>
+        <div>
+          <strong>{projectCount}</strong>
+          <span>projects</span>
+        </div>
+      </section>
+      <div className="practice-library-controls">
+        <input
+          type="search"
+          aria-label="Search practice"
+          placeholder="Search topics and projects…"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
+        <div role="group" aria-label="Practice filter">
+          <button
+            type="button"
+            aria-pressed={filter === "all"}
+            onClick={() => setFilter("all")}
+          >
+            All practice
+          </button>
+          <button
+            type="button"
+            aria-pressed={filter === "projects"}
+            onClick={() => setFilter("projects")}
+          >
+            Projects
+          </button>
+        </div>
+      </div>
+      {!result.data && !result.error && (
+        <p role="status">Loading curriculum practice…</p>
+      )}
+      {result.data && items.length === 0 && (
+        <p>No exercises or projects match this view.</p>
+      )}
+      <div className="practice-overview-grid">
+        {items.map((item) => {
+          const isProject = ["project", "course-project"].includes(item.kind);
+          return (
+            <article className="practice-overview-card" key={item.slug}>
+              <header>
+                <div>
+                  <p className="panel-kicker">
+                    {isProject
+                      ? "PROJECT"
+                      : item.kind.replaceAll("-", " ").toUpperCase()}
+                  </p>
+                  <h2>
+                    <Link to="/t/$slug" params={{ slug: item.slug }}>
+                      {item.title}
+                    </Link>
+                  </h2>
+                </div>
+                {item.checkpoint && (
+                  <span className="checkpoint-badge">Checkpoint</span>
+                )}
+              </header>
+              <p className="practice-overview-meta">
+                {item.domain || "Unclassified"} ·{" "}
+                {item.status.replaceAll("-", " ")} · {item.statusSource}
+              </p>
+              {item.total > 0 ? (
+                <div className="practice-progress-row">
+                  <div
+                    className="practice-progress-track"
+                    role="progressbar"
+                    aria-label={`${item.title} step progress`}
+                    aria-valuemin={0}
+                    aria-valuemax={item.total}
+                    aria-valuenow={item.completed}
+                  >
+                    <span style={{ width: `${item.percentage}%` }} />
+                  </div>
+                  <small>
+                    {item.completed}/{item.total} complete
+                  </small>
+                </div>
+              ) : (
+                <p className="practice-overview-meta">
+                  No checklist steps in this source.
+                </p>
+              )}
+              {item.suggestedStatus && (
+                <aside className="project-status-suggestion">
+                  <strong>Suggested status: {item.suggestedStatus}</strong>
+                  <span>
+                    Review this suggestion before changing the Markdown status.
+                  </span>
+                  <Link to="/t/$slug" params={{ slug: item.slug }}>
+                    Review project <ArrowRight size={13} />
+                  </Link>
+                </aside>
+              )}
+              {!!item.conceptsPracticed.length && (
+                <div className="concepts-practiced">
+                  <strong>Concepts practiced</strong>
+                  <ul>
+                    {item.conceptsPracticed.map((concept) => (
+                      <li key={concept.label}>
+                        {concept.slug ? (
+                          <Link to="/t/$slug" params={{ slug: concept.slug }}>
+                            {concept.label}
+                          </Link>
+                        ) : (
+                          <span>{concept.label}</span>
+                        )}
+                        <small>{concept.status ?? "Status not tracked"}</small>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {!!item.attachments.length && (
+                <div className="practice-attachments">
+                  <strong>Attachments ({item.attachments.length})</strong>
+                  <ul>
+                    {item.attachments.map((attachment) => (
+                      <li key={attachment.id}>
+                        {attachment.display_name}
+                        <small>
+                          {attachment.file_kind} · {attachment.availability}
+                        </small>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <Link
+                className="practice-open-link"
+                to="/t/$slug"
+                params={{ slug: item.slug }}
+              >
+                Open exercises <ArrowRight size={14} />
+              </Link>
+            </article>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 type RepairPreview = {
   issueId: string;
   path: string;
@@ -3466,6 +3988,11 @@ const router = createRouter({
       getParentRoute: () => root,
       path: "/resources",
       component: ResourcesPage,
+    }),
+    createRoute({
+      getParentRoute: () => root,
+      path: "/practice",
+      component: PracticeLibrary,
     }),
     createRoute({
       getParentRoute: () => root,

@@ -402,6 +402,7 @@ it("creates and saves personal notes through guarded Markdown writes", async () 
     origin: "http://127.0.0.1:4317",
     "x-synapse": "1",
   };
+  const quickCapture = "Initial quick capture exists only in Markdown.";
   try {
     const created = await writable.app.inject({
       method: "POST",
@@ -411,6 +412,7 @@ it("creates and saves personal notes through guarded Markdown writes", async () 
         title: "Gradient Descent - learning rate intuition",
         scope: "topic",
         aboutSlug: "vectors",
+        content: quickCapture,
       },
     });
     expect(created.statusCode).toBe(200);
@@ -422,6 +424,7 @@ it("creates and saves personal notes through guarded Markdown writes", async () 
     expect(original).toContain("type: note\nscope: topic");
     expect(original).toContain('"[[Vectors]]"');
     expect(original).toContain("created:");
+    expect(original).toContain(quickCapture);
     expect(
       (
         await writable.app.inject({
@@ -483,10 +486,11 @@ it("creates and saves personal notes through guarded Markdown writes", async () 
         })
       )
         .json()
-        .find((item: { slug: string }) => item.slug === result.slug).snippet,
-    ).toContain(privateSentence);
+        .map((item: { slug: string }) => item.slug),
+    ).toContain(result.slug);
     const dbBytes = await readFile(join(root, "notes-state", "state.db"));
     expect(dbBytes.includes(Buffer.from(privateSentence))).toBe(false);
+    expect(dbBytes.includes(Buffer.from(quickCapture))).toBe(false);
   } finally {
     await writable.app.close();
   }
@@ -763,6 +767,74 @@ it("tracks app exercises, preserves reworded ticks and keeps removed items as or
     await writable.work.refresh();
     await writable.app.close();
   }
+});
+
+it("summarizes project steps and suggests status without changing Markdown", async () => {
+  const initial = (
+    await ctx.app.inject({ url: "/api/practice", headers })
+  ).json() as {
+    slug: string;
+    title: string;
+    kind: string;
+    status: string;
+    total: number;
+    completed: number;
+    suggestedStatus: string | null;
+    conceptsPracticed: { label: string; status: string | null }[];
+  }[];
+  const project = initial.find(
+    (item) => item.title === "Project - Calibrate a Sensor",
+  );
+  expect(project).toBeTruthy();
+  expect(project).toMatchObject({
+    kind: "project",
+    status: "not-started",
+    total: 4,
+    completed: 0,
+    suggestedStatus: null,
+  });
+  expect(project!.conceptsPracticed.map((item) => item.label)).toEqual([
+    "Linear Regression",
+    "Residual Analysis",
+  ]);
+  const projectDetail = (
+    await ctx.app.inject({ url: `/api/practice/${project!.slug}`, headers })
+  ).json();
+  expect(
+    projectDetail.exercises.every(
+      (item: { source: string }) => item.source === "app",
+    ),
+  ).toBe(true);
+  const projectPath = join(
+    root,
+    "vault/12 - Projects/Project - Calibrate a Sensor.md",
+  );
+  const original = await readFile(projectPath, "utf8");
+  const mutation = {
+    ...headers,
+    origin: "http://127.0.0.1:4317",
+    "x-synapse": "1",
+    "content-type": "application/json",
+  };
+  for (const item of projectDetail.exercises) {
+    await ctx.app.inject({
+      method: "POST",
+      url: `/api/practice/${project!.slug}`,
+      headers: mutation,
+      payload: { fingerprint: item.fingerprint, done: true },
+    });
+    const current = (
+      await ctx.app.inject({ url: "/api/practice", headers })
+    ).json() as typeof initial;
+    const progress = current.find((row) => row.slug === project!.slug)!;
+    expect(progress.suggestedStatus).toBe(
+      progress.completed === progress.total ? "completed" : "in-progress",
+    );
+  }
+  expect(await readFile(projectPath, "utf8")).toBe(original);
+  ctx.state.db
+    .prepare("DELETE FROM exercise_progress WHERE nid=?")
+    .run(ctx.nid(project!.slug));
 });
 
 it("previews course migration read-only and applies and reverts the selected file in an isolated vault", async () => {
