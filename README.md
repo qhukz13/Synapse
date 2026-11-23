@@ -9,3 +9,5 @@ For a single local process, run `pnpm build` and `pnpm start` after the sample h
 To read your own vault, copy `synapse.config.example.json` to `synapse.config.json`. Set `vaultPath` to the directory containing the curriculum and choose a separate `dataDir`. Keep `allowVaultWrites` false. Synapse stores SQLite state in `dataDir/state.db`. Give each vault its own data directory.
 
 See [Development](DEVELOPMENT.md), [Testing](TESTING.md) and [Implementation status](IMPLEMENTATION_STATUS.md).
+
+For an isolated editing trial, point the config at a disposable vault and set `allowVaultWrites` to true. Topic pages then expose source editing, status actions, and saved file versions. The first save to an existing file stores its previous bytes under the application data directory.

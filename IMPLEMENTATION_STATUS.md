@@ -1,37 +1,28 @@
 # Synapse implementation status
 
-Current milestone: M1, curriculum indexing.
+## Current milestone
 
-## Foundation
+M5, editing and synchronization. Synapse is usable as a local vault reader. The complete F1–F24 release remains in development.
 
-Independent main repository and loopback workspace established. React/Vite shell, Fastify health endpoint, strict TypeScript, validated configuration, isolated sample, Vitest and Playwright are present. Node 26 SQLite capability and the contrast adjustment are recorded in docs/ARCH-NOTES.md.
+## Implemented
 
-## In progress
+- M0–M1 established the independent pnpm workspace, portable sample, private fixture workflow and read-only inventory verifier. The curriculum index parses metadata, links, prerequisites, learning order, exercises and health issues.
+- M2 added the local API, watcher, replayable events, stable SQLite identities and contentless search. A socket integration test covers reconnect and replay. URL stability under new duplicate basenames still needs integration.
+- M3–M4 added the responsive reader, Markdown and KaTeX rendering, local search, folder/domain/Learning Path grouping, URL-filtered list, resources and practice displays, library links, and a read-only Vault Health view. The full shell, command palette and all-note browser rendering sweep are pending.
+- M5 added the audited write coordinator, opt-in CodeMirror source editor with preview, guarded status and checkbox actions, conflict comparison, backups, file history, and explicit restore. Draft persistence, automatic three-way merge, the full metadata form, mirror controls and conflict-copy resolution are pending.
 
-Validate the read-only index and the discovery baseline. The first full scan parsed 194 notes and all 166 frontmatters with zero disk changes. The PDF and URL totals differ from the planning baseline and are under investigation.
+## Verification
 
-M2 through M13 remain open. No real-vault editing has been enabled. The write-safety gate must pass before write-enabled feature development. Results, commits and next steps will be updated at each checkpoint.
+- The 119-check suite passed after write routes were integrated. The independent vault snapshot reported zero changes across 227 files, including all 194 Markdown notes.
+- Browser search and prerequisite navigation passed in three viewport sizes without an outbound request.
+- The first 100-round stress run passed 1,700 checks. The expanded 21-case suite then passed 2,100 checks across 100 independent rounds.
+- Discovery and current PDF/URL totals differ as described in docs/ARCH-NOTES.md. The POSIX write fallback has the final check-to-rename limitation documented in DEVELOPMENT.md.
+- Production build passed. Vite warned that the lazy editor chunk exceeds its default size warning threshold.
 
-M0 checks: 5 configuration tests passed and the Vite → Fastify smoke journey passed at 1440×900, 1024×768 and 390×844. Chromium was supplied via SYNAPSE_CHROMIUM.
+## Commits
 
-## M1 verification
+`a7a787f` foundation, `ba04854` parser and verification, `812b092` local read server, `6f1d6e7` responsive reader, `90e7e9b` safe editing and `493fea2` editor preview and restore.
 
-All 194 Markdown documents and 166 metadata blocks parsed. The full index contains 162 prerequisite edges (145 curriculum edges), 12 stages and 16 checkbox-backed statuses. The health inventory agrees with discovery, including 3 folder links, 6 body-only prerequisite warnings, 33 redundant edges and 8 later prerequisites. The initial integrity scan compared 227 files with zero creations, changes or removals. See docs/ARCH-NOTES.md for the PDF and bare-URL baseline differences.
+## Remaining work
 
-The core suite passed 33 checks with 99.59% line coverage. Foundation commit a7a787f reached origin/main. M2 is in progress. Full-fidelity file writes, change sets and activity features are still pending.
-
-## Reader checkpoint
-
-The loopback read API, watcher and event stream are integrated. SQLite identity and contentless search are live. The reader displays Markdown, advisory prerequisites, resources and practice material. The browser shell also includes a folder-based curriculum view, full-text search, library links and a read-only health list. The current verifier matches the reconciled inventory and confirmed 227 files unchanged.
-
-The read server is committed as 812b092. The remaining M2 check is browser verification of event replay. M3–M4 still need the complete shell, Learning Path ordering, list filters, command palette and the full-vault rendering sweep. M5 patchers and the coordinator are under isolated testing. No application route invokes the coordinator yet. M6–M13 remain open.
-
-The next integration steps are to finish the reader acceptance gaps, verify the write stress run, and route explicitly authorized editor and status actions through the coordinator.
-
-## Editing checkpoint
-
-Current milestone is M5. The read-only server, renderer and browser reader are committed through 6f1d6e7. The reader now also offers Learning Path, folder and domain grouping, a URL-filtered curriculum list, and Ctrl/Cmd+K search navigation. A real socket test verifies event replay.
-
-The opt-in CodeMirror editor and frontmatter status form call the audited coordinator. Source conflicts show the original, current disk version and retained draft. The write API exposes history, restore and real checkbox actions. Outstanding M5 UX includes persisted drafts, three-way merge, richer metadata edits, the course checkbox status control, history and sync-conflict resolution screens, and the manual Obsidian concurrency check. Recovery and atomic publication behavior are documented in DEVELOPMENT.md.
-
-The current suite passed 119 checks. The first 100-round write run passed 1,700 checks. The expanded 21-case suite passed once and is undergoing its own 100-round run. Browser search and prerequisite navigation passed at three viewport sizes before the editing controls were added. The full release acceptance suite and M6–M13 features remain pending.
+Finish M5 acceptance including manual Obsidian concurrency and recovery verification. Continue with M6 repair and migration change sets, M7 timers and streaks, M8 personal notes and completion tracking, M9 attachment management and file viewers, M10 interactive graph and daily dashboard, M11 manual review and statistics, then M12–M13 full responsive, performance and accessibility acceptance.

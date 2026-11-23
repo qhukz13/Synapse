@@ -17,7 +17,11 @@ if (testDirectory) {
   process.env.SYNAPSE_CONFIG = join(testDirectory, "config.json");
   await writeFile(
     process.env.SYNAPSE_CONFIG,
-    JSON.stringify({ vaultPath, dataDir: join(testDirectory, "state") }),
+    JSON.stringify({
+      vaultPath,
+      dataDir: join(testDirectory, "state"),
+      allowVaultWrites: true,
+    }),
   );
 } else {
   await prepareSample();

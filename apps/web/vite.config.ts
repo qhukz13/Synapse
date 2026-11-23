@@ -5,6 +5,17 @@ import { fileURLToPath } from "node:url";
 export default defineConfig({
   root: fileURLToPath(new URL(".", import.meta.url)),
   plugins: [react(), tailwind()],
+  optimizeDeps: {
+    include: [
+      "codemirror",
+      "@codemirror/lang-markdown",
+      "react-markdown",
+      "remark-gfm",
+      "remark-math",
+      "rehype-katex",
+      "rehype-sanitize",
+    ],
+  },
   server: {
     host: "127.0.0.1",
     port: 5173,
