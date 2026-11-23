@@ -1,5 +1,6 @@
 import { registerChangesets } from "./routes/changesets";
 import { registerEditor } from "./routes/editor";
+import { registerNotes } from "./routes/notes";
 import { WriteCoordinator, WriteError } from "./vault/writes";
 import Fastify, { type FastifyInstance } from "fastify";
 import staticFiles from "@fastify/static";
@@ -44,6 +45,7 @@ export async function createApp(config: Config, dev = false) {
   const ctx = { app, config, state, work, topic, nid, sessions };
   registerRead(ctx, writer);
   registerEditor(ctx, writer);
+  registerNotes(ctx, writer);
   registerChangesets(ctx, writer);
   registerSessions(ctx);
   app.get("/api/events", (req, reply) => {
@@ -115,6 +117,7 @@ function registerRead(
     unavailable: work.unavailable,
     writeEnabled: config.allowVaultWrites,
     vaultPath: config.vaultPath,
+    personalNotesRoot: config.personalNotes.root,
   }));
   app.get("/api/topics", (req) => {
     const filters = z.record(z.string(), z.string()).parse(req.query);

@@ -1,4 +1,49 @@
 import { test, expect } from "@playwright/test";
+test("creates, autosaves and searches a scoped personal note", async ({
+  page,
+  context,
+}, testInfo) => {
+  const token = `synapse-note-${Date.now()}-${testInfo.project.name}`;
+  const title = `Learning capture ${token}`;
+  const sentence = `Уникальный сигнал ${token}`;
+  await page.goto("/notes");
+  await page.getByRole("button", { name: "New note" }).click();
+  await page.getByLabel("Title").fill(title);
+  await page
+    .getByRole("combobox", { name: "Topic", exact: true })
+    .selectOption("vectors");
+  await expect(page.locator(".new-note-form > small")).toContainText(
+    "Personal Notes/Topics/Vectors",
+  );
+  await page.getByRole("button", { name: "Create note" }).click();
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+  const editor = page.getByRole("textbox", { name: "Markdown note" });
+  await editor.fill(`${await editor.inputValue()}\n## Capture\n${sentence}\n`);
+  await expect(
+    page.locator('.personal-note-heading [role="status"]'),
+  ).toHaveText("Saved", { timeout: 5_000 });
+  await page.reload();
+  await expect(
+    page.getByRole("textbox", { name: "Markdown note" }),
+  ).toHaveValue(new RegExp(sentence));
+  const noteUrl = page.url();
+  const pagehideSentence = `Pagehide flush ${token}`;
+  await editor.fill(`${await editor.inputValue()}\n${pagehideSentence}`);
+  await page.close();
+  const reopened = await context.newPage();
+  await reopened.goto(noteUrl);
+  await expect(
+    reopened.getByRole("textbox", { name: "Markdown note" }),
+  ).toHaveValue(new RegExp(pagehideSentence));
+  await reopened.goto("/notes");
+  await reopened
+    .getByRole("searchbox", { name: "Search personal notes" })
+    .fill(token);
+  await expect(
+    reopened.getByRole("link", { name: new RegExp(title) }),
+  ).toBeVisible();
+});
+
 test("shows real dashboard recommendations and persists resource completion", async ({
   page,
 }) => {

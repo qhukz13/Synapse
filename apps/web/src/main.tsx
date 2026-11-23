@@ -27,6 +27,7 @@ import {
   LayoutDashboard,
   BookmarkCheck,
   ArrowRight,
+  FileText,
 } from "lucide-react";
 import type { Catalogue, TopicRow } from "@synapse/core/view";
 import type { Issue, Topic } from "@synapse/core";
@@ -60,6 +61,7 @@ const summary = () =>
       unavailable: string;
       writeEnabled: boolean;
       vaultPath: string;
+      personalNotesRoot: string;
     }
   >("index/summary");
 function Layout() {
@@ -102,6 +104,9 @@ function Layout() {
         </Link>
         <Link to="/resources">
           <BookmarkCheck /> Resources
+        </Link>
+        <Link to="/notes">
+          <FileText /> Personal notes
         </Link>
         <Link to="/sessions">
           <Clock3 /> Study sessions
@@ -2063,6 +2068,352 @@ function SearchPage() {
     </>
   );
 }
+type PersonalNoteRow = {
+  slug: string;
+  title: string;
+  path: string;
+  scope: string;
+  domain: string;
+  stage: number;
+  hash: string;
+  mtimeMs: number;
+};
+function PersonalNotesPage() {
+  const access = summary();
+  const navigate = useNavigate();
+  const [q, setQ] = useState("");
+  const [scope, setScope] = useState("all");
+  const [creating, setCreating] = useState(false);
+  const [title, setTitle] = useState("");
+  const [newScope, setNewScope] = useState<"general" | "topic" | "project">(
+    "topic",
+  );
+  const [aboutSlug, setAboutSlug] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const notes = query<PersonalNoteRow[]>(
+    `personal-notes?q=${encodeURIComponent(q)}${scope !== "all" ? `&scope=${scope}` : ""}`,
+  );
+  const owners = (access.data?.topics ?? []).filter((topic) =>
+    newScope === "project"
+      ? ["project", "course-project"].includes(topic.kind)
+      : !["project", "course-project", "note"].includes(topic.kind),
+  );
+  const selectedOwner = owners.find((item) => item.slug === aboutSlug);
+  const rootPath = access.data?.personalNotesRoot ?? "Personal Notes";
+  const pathPreview =
+    newScope === "general"
+      ? `${rootPath}/General/${title || "<title>"}.md`
+      : `${rootPath}/${newScope === "project" ? "Projects" : "Topics"}/${(selectedOwner?.title ?? "<item>").replace(/[\\/]/g, " - ")}/${title || "<title>"}.md`;
+  const create = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/personal-notes", {
+        method: "POST",
+        headers: { "x-synapse": "1", "content-type": "application/json" },
+        body: JSON.stringify({
+          title,
+          scope: newScope,
+          ...(newScope === "general" ? {} : { aboutSlug }),
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw Error(result.message ?? "Could not create note.");
+      await client.invalidateQueries({ queryKey: ["personal-notes"] });
+      setCreating(false);
+      setTitle("");
+      if (result.slug)
+        void navigate({ to: "/notes/$slug", params: { slug: result.slug } });
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not create note.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <header className="notes-heading">
+        <div>
+          <p className="eyebrow">YOUR MARKDOWN</p>
+          <h1>Personal notes</h1>
+          <p>
+            Notes stay in your vault. Synapse indexes them without storing note
+            text in SQLite.
+          </p>
+        </div>
+        {access.data?.writeEnabled && (
+          <button type="button" onClick={() => setCreating((open) => !open)}>
+            {creating ? "Cancel" : "New note"}
+          </button>
+        )}
+      </header>
+      {!access.data?.writeEnabled && (
+        <p className="read-only-banner">
+          This vault is open read-only. Enable writes in local configuration to
+          create notes.
+        </p>
+      )}
+      {creating && (
+        <form
+          className="new-note-form"
+          onSubmit={(event) => void create(event)}
+        >
+          <label>
+            Title
+            <input
+              value={title}
+              maxLength={200}
+              required
+              onChange={(event) => setTitle(event.target.value)}
+            />
+          </label>
+          <label>
+            Scope
+            <select
+              value={newScope}
+              onChange={(event) =>
+                setNewScope(event.target.value as typeof newScope)
+              }
+            >
+              <option value="topic">Topic</option>
+              <option value="project">Project</option>
+              <option value="general">General</option>
+            </select>
+          </label>
+          {newScope !== "general" && (
+            <label>
+              {newScope === "project" ? "Project" : "Topic"}
+              <select
+                value={aboutSlug}
+                required
+                onChange={(event) => setAboutSlug(event.target.value)}
+              >
+                <option value="">Choose…</option>
+                {owners.map((owner) => (
+                  <option key={owner.slug} value={owner.slug}>
+                    {owner.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <small>Creates at {pathPreview}</small>
+          {error && <p role="alert">{error}</p>}
+          <button
+            type="submit"
+            disabled={
+              busy || !title.trim() || (newScope !== "general" && !aboutSlug)
+            }
+          >
+            {busy ? "Creating…" : "Create note"}
+          </button>
+        </form>
+      )}
+      <div className="notes-filters">
+        <input
+          type="search"
+          aria-label="Search personal notes"
+          placeholder="Search note content…"
+          value={q}
+          onChange={(event) => setQ(event.target.value)}
+        />
+        <select
+          aria-label="Filter by scope"
+          value={scope}
+          onChange={(event) => setScope(event.target.value)}
+        >
+          <option value="all">All scopes</option>
+          <option value="general">General</option>
+          <option value="topic">Topic</option>
+          <option value="project">Project</option>
+          <option value="legacy">Legacy locations</option>
+        </select>
+      </div>
+      {notes.error && <p role="alert">{notes.error.message}</p>}
+      {notes.data?.length ? (
+        <ul className="personal-note-list">
+          {notes.data.map((note) => (
+            <li key={note.slug}>
+              <Link to="/notes/$slug" params={{ slug: note.slug }}>
+                <FileText size={16} />
+                <span>
+                  {note.title}
+                  <small>
+                    {note.scope} · {note.domain || note.path}
+                  </small>
+                </span>
+                <small>{new Date(note.mtimeMs).toLocaleDateString()}</small>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p>
+          {q ? "No notes match this search." : "No notes found for this scope."}
+        </p>
+      )}
+    </>
+  );
+}
+function PersonalNotePage() {
+  const { slug } = useParams({ from: "/notes/$slug" });
+  const access = summary();
+  const note = query<{
+    slug: string;
+    title: string;
+    path: string;
+    hash: string;
+    text: string;
+  }>(`personal-notes/${encodeURIComponent(slug)}`);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [baseHash, setBaseHash] = useState("");
+  const [lastSaved, setLastSaved] = useState("");
+  const [state, setState] = useState("Saved");
+  const [conflict, setConflict] = useState<{
+    hash: string;
+    theirs: string;
+  } | null>(null);
+  useEffect(() => {
+    if (note.data && draft === null) {
+      setDraft(note.data.text);
+      setBaseHash(note.data.hash);
+      setLastSaved(note.data.text);
+    }
+  }, [note.data, draft]);
+  const save = async (text: string, expectedHash = baseHash) => {
+    setState("Saving…");
+    const response = await fetch(
+      `/api/personal-notes/${encodeURIComponent(slug)}`,
+      {
+        method: "PUT",
+        headers: { "x-synapse": "1", "content-type": "application/json" },
+        body: JSON.stringify({ baseHash: expectedHash, text }),
+      },
+    );
+    const result = await response.json();
+    if (response.status === 409 && result.details?.theirs) {
+      setConflict({ hash: result.details.hash, theirs: result.details.theirs });
+      setState("Conflict needs review");
+      return;
+    }
+    if (!response.ok) {
+      setState(result.message ?? "Save failed");
+      return;
+    }
+    setBaseHash(result.hash);
+    setLastSaved(text);
+    setState("Saved");
+    setConflict(null);
+  };
+  useEffect(() => {
+    if (
+      !draft ||
+      !baseHash ||
+      draft === lastSaved ||
+      conflict ||
+      !access.data?.writeEnabled
+    )
+      return;
+    setState("Unsaved changes");
+    const timer = window.setTimeout(() => void save(draft), 700);
+    return () => window.clearTimeout(timer);
+  }, [draft, baseHash, lastSaved, conflict, access.data?.writeEnabled]);
+  useEffect(() => {
+    if (
+      !draft ||
+      !baseHash ||
+      draft === lastSaved ||
+      conflict ||
+      !access.data?.writeEnabled
+    )
+      return;
+    const flush = () => {
+      void fetch(`/api/personal-notes/${encodeURIComponent(slug)}`, {
+        method: "PUT",
+        headers: { "x-synapse": "1", "content-type": "application/json" },
+        body: JSON.stringify({ baseHash, text: draft }),
+        keepalive: true,
+      }).catch(() => {});
+    };
+    window.addEventListener("pagehide", flush);
+    return () => window.removeEventListener("pagehide", flush);
+  }, [slug, draft, baseHash, lastSaved, conflict, access.data?.writeEnabled]);
+  if (!note.data || draft === null)
+    return <p role="status">{note.error?.message ?? "Opening note…"}</p>;
+  return (
+    <>
+      <div className="crumb">
+        <Link to="/notes">Personal notes</Link> / {note.data.path}
+      </div>
+      <header className="personal-note-heading">
+        <div>
+          <h1>{note.data.title}</h1>
+          <p>{note.data.path}</p>
+        </div>
+        <small role="status">
+          {access.data?.writeEnabled ? state : "Read-only"}
+        </small>
+      </header>
+      {conflict && (
+        <section className="note-conflict" role="alert">
+          <h2>This note changed outside Synapse</h2>
+          <p>
+            Your draft is still here. Review the current vault version before
+            replacing it.
+          </p>
+          <details>
+            <summary>Current vault version</summary>
+            <pre>{conflict.theirs}</pre>
+          </details>
+          <div>
+            <button
+              type="button"
+              onClick={() => {
+                setDraft(conflict.theirs);
+                setLastSaved(conflict.theirs);
+                setBaseHash(conflict.hash);
+                setConflict(null);
+                setState("Loaded external version");
+              }}
+            >
+              Load external version
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Replace the external version with your draft?",
+                  )
+                )
+                  void save(draft, conflict.hash);
+              }}
+            >
+              Replace external with my draft
+            </button>
+          </div>
+        </section>
+      )}
+      <label
+        className="personal-note-editor-label"
+        htmlFor="personal-note-editor"
+      >
+        Markdown note
+      </label>
+      <textarea
+        id="personal-note-editor"
+        className="personal-note-editor"
+        value={draft}
+        readOnly={!access.data?.writeEnabled}
+        onChange={(event) => setDraft(event.target.value)}
+      />
+    </>
+  );
+}
 function Library() {
   const result = query<{ path: string; size: number }[]>("library");
   return (
@@ -2492,6 +2843,16 @@ const router = createRouter({
       getParentRoute: () => root,
       path: "/resources",
       component: ResourcesPage,
+    }),
+    createRoute({
+      getParentRoute: () => root,
+      path: "/notes",
+      component: PersonalNotesPage,
+    }),
+    createRoute({
+      getParentRoute: () => root,
+      path: "/notes/$slug",
+      component: PersonalNotePage,
     }),
     createRoute({
       getParentRoute: () => root,

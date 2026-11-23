@@ -912,6 +912,119 @@ summary small {
   margin: 8px 0 0;
   padding: 0;
 }
+.notes-heading,
+.personal-note-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.2rem;
+}
+.notes-heading h1,
+.notes-heading p,
+.personal-note-heading h1,
+.personal-note-heading p {
+  margin-top: 0;
+}
+.notes-heading p,
+.personal-note-heading p {
+  color: var(--fg-3);
+}
+.notes-filters {
+  display: flex;
+  gap: 0.6rem;
+  margin: 1.2rem 0;
+}
+.notes-filters input {
+  flex: 1;
+}
+.new-note-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  align-items: end;
+  gap: 0.8rem;
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid var(--border-1);
+  border-radius: 9px;
+  background: var(--bg-1);
+}
+.new-note-form label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--fg-2);
+  font-size: 0.8rem;
+}
+.new-note-form small,
+.new-note-form [role="alert"] {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.personal-note-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.personal-note-list li {
+  border-bottom: 1px solid var(--border-1);
+}
+.personal-note-list a {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.8rem 0.4rem;
+  color: var(--fg-1);
+  text-decoration: none;
+}
+.personal-note-list a > span {
+  display: grid;
+  flex: 1;
+  gap: 0.2rem;
+}
+.personal-note-list small {
+  color: var(--fg-3);
+}
+.personal-note-editor-label {
+  display: block;
+  margin: 1.5rem 0 0.45rem;
+  color: var(--fg-2);
+  font-size: 0.8rem;
+}
+.personal-note-editor {
+  display: block;
+  width: 100%;
+  min-height: min(65vh, 48rem);
+  padding: 1rem;
+  color: var(--fg-1);
+  background: var(--bg-1);
+  border: 1px solid var(--border-1);
+  border-radius: 9px;
+  font: 0.9rem/1.65 var(--font-code);
+  resize: vertical;
+  tab-size: 2;
+}
+.note-conflict {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid var(--warning);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warning) 7%, var(--bg-1));
+}
+.note-conflict h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+.note-conflict pre {
+  max-height: 18rem;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+.note-conflict > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.8rem;
+}
 .activity-list li {
   display: grid;
   grid-template-columns: 10px minmax(0, 1fr);

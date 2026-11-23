@@ -388,6 +388,89 @@ it("returns the entire original Markdown body and the vault connection details",
   });
 });
 
+it("creates and saves personal notes through guarded Markdown writes", async () => {
+  const writable = await createApp(
+    configFrom({
+      vaultPath: join(root, "vault"),
+      dataDir: join(root, "notes-state"),
+      allowVaultWrites: true,
+    }),
+  );
+  const mutation = {
+    ...headers,
+    origin: "http://127.0.0.1:4317",
+    "x-synapse": "1",
+  };
+  try {
+    const created = await writable.app.inject({
+      method: "POST",
+      url: "/api/personal-notes",
+      headers: mutation,
+      payload: {
+        title: "Gradient Descent - learning rate intuition",
+        scope: "topic",
+        aboutSlug: "vectors",
+      },
+    });
+    expect(created.statusCode).toBe(200);
+    const result = created.json();
+    expect(result.path).toBe(
+      "Personal Notes/Topics/Vectors/Gradient Descent - learning rate intuition.md",
+    );
+    const original = await readFile(join(root, "vault", result.path), "utf8");
+    expect(original).toContain("type: note\nscope: topic");
+    expect(original).toContain('"[[Vectors]]"');
+    expect(original).toContain("created:");
+
+    const collision = await writable.app.inject({
+      method: "POST",
+      url: "/api/personal-notes",
+      headers: mutation,
+      payload: {
+        title: "Gradient Descent - learning rate intuition",
+        scope: "topic",
+        aboutSlug: "linear-regression",
+      },
+    });
+    expect(collision.statusCode).toBe(409);
+    expect(collision.json().code).toBe("NAME_COLLISION");
+
+    const detail = await writable.app.inject({
+      url: `/api/personal-notes/${result.slug}`,
+      headers,
+    });
+    const note = detail.json();
+    const privateSentence = "A private sentence that belongs only in Markdown.";
+    const text = `${note.text}\n${privateSentence}\n`;
+    expect(
+      (
+        await writable.app.inject({
+          method: "PUT",
+          url: `/api/personal-notes/${result.slug}`,
+          headers: mutation,
+          payload: { baseHash: note.hash, text },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await writable.app.inject({
+          method: "PUT",
+          url: `/api/personal-notes/${result.slug}`,
+          headers: mutation,
+          payload: { baseHash: note.hash, text: note.text },
+        })
+      ).statusCode,
+    ).toBe(409);
+    const saved = await readFile(join(root, "vault", result.path), "utf8");
+    expect(saved).toContain(privateSentence);
+    const dbBytes = await readFile(join(root, "notes-state", "state.db"));
+    expect(dbBytes.includes(Buffer.from(privateSentence))).toBe(false);
+  } finally {
+    await writable.app.close();
+  }
+});
+
 it("previews course migration read-only and applies and reverts the selected file in an isolated vault", async () => {
   const url = "/api/vault-health/proposals?kind=python-course-migration";
   const payloadFor = (item: {
