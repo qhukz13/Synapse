@@ -140,10 +140,26 @@ function StudyTimer() {
     }>("stats/study", true, 30_000);
   const [now, setNow] = useState(Date.now());
   const lastInput = useRef(Date.now());
+  const tabId = useRef(Math.random().toString(36).slice(2));
   const active = session.data;
   useEffect(() => {
+    const channel =
+      typeof BroadcastChannel === "undefined"
+        ? null
+        : new BroadcastChannel("synapse-study-activity");
+    const receive = (event: MessageEvent) => {
+      const at = event.data?.type === "activity" ? event.data.at : NaN;
+      if (Number.isFinite(at))
+        lastInput.current = Math.max(
+          lastInput.current,
+          Math.min(Date.now(), at),
+        );
+    };
+    channel?.addEventListener("message", receive);
     const input = () => {
-      lastInput.current = Date.now();
+      const at = Date.now();
+      lastInput.current = at;
+      channel?.postMessage({ type: "activity", at });
     };
     for (const event of ["keydown", "pointerdown", "scroll"])
       window.addEventListener(event, input, { passive: true });
@@ -154,6 +170,8 @@ function StudyTimer() {
         window.removeEventListener(event, input);
       document.removeEventListener("playing", input, true);
       document.removeEventListener("timeupdate", input, true);
+      channel?.removeEventListener("message", receive);
+      channel?.close();
     };
   }, []);
   useEffect(() => {
@@ -162,16 +180,112 @@ function StudyTimer() {
   }, []);
   useEffect(() => {
     if (!active || active.state !== "running") return;
-    const heartbeat = window.setInterval(() => {
-      void fetch(`/api/sessions/${active.id}/heartbeat`, {
-        method: "POST",
-        headers: { "x-synapse": "1", "content-type": "application/json" },
-        body: JSON.stringify({ lastInputAt: lastInput.current }),
-      }).then(() =>
-        client.invalidateQueries({ queryKey: ["sessions/current"] }),
-      );
-    }, 30_000);
-    return () => window.clearInterval(heartbeat);
+    let stopped = false;
+    let wakeTimer = 0;
+    let wake: (() => void) | undefined;
+    const wait = (ms: number) =>
+      new Promise<void>((resolve) => {
+        const finish = () => {
+          wake = undefined;
+          resolve();
+        };
+        wake = finish;
+        wakeTimer = window.setTimeout(finish, ms);
+      });
+    const beat = async () => {
+      try {
+        const response = await fetch(`/api/sessions/${active.id}/heartbeat`, {
+          method: "POST",
+          headers: { "x-synapse": "1", "content-type": "application/json" },
+          body: JSON.stringify({ lastInputAt: lastInput.current }),
+        });
+        if (response.ok) {
+          const sessionState = (await response.json()).state;
+          await client.invalidateQueries({ queryKey: ["sessions/current"] });
+          return sessionState === "running";
+        }
+      } catch {
+        // A transient local request error is retried on the next beat.
+      }
+      return true;
+    };
+    const lead = async () => {
+      while (!stopped) {
+        let acquired = false;
+        try {
+          await navigator.locks.request(
+            "synapse-study-heartbeat",
+            { ifAvailable: true },
+            async (lock) => {
+              if (!lock) return;
+              acquired = true;
+              while (!stopped && (await beat())) await wait(30_000);
+              stopped = true;
+            },
+          );
+        } catch {
+          // Fall back to a short-lived localStorage lease below.
+          await leaseLead();
+          return;
+        }
+        if (!acquired && !stopped) await wait(5_000);
+      }
+    };
+    const leaseLead = async () => {
+      while (!stopped) {
+        let owner = false;
+        try {
+          const key = "synapse-study-heartbeat-lease";
+          const existing = JSON.parse(localStorage.getItem(key) ?? "null") as {
+            owner: string;
+            expires: number;
+          } | null;
+          if (
+            !existing ||
+            existing.expires <= Date.now() ||
+            existing.owner === tabId.current
+          ) {
+            localStorage.setItem(
+              key,
+              JSON.stringify({
+                owner: tabId.current,
+                expires: Date.now() + 45_000,
+              }),
+            );
+            owner =
+              (
+                JSON.parse(localStorage.getItem(key) ?? "null") as {
+                  owner?: string;
+                } | null
+              )?.owner === tabId.current;
+          }
+          if (owner && !(await beat())) {
+            stopped = true;
+            break;
+          }
+        } catch {
+          // Storage may be disabled; the session still works with this tab's timer.
+          await beat();
+        }
+        await wait(owner ? 30_000 : 5_000);
+      }
+      try {
+        const key = "synapse-study-heartbeat-lease";
+        const lease = JSON.parse(localStorage.getItem(key) ?? "null") as {
+          owner?: string;
+        } | null;
+        if (lease?.owner === tabId.current) localStorage.removeItem(key);
+      } catch {
+        /* storage can be unavailable */
+      }
+    };
+    if (navigator.locks) void lead();
+    else void leaseLead();
+    return () => {
+      stopped = true;
+      window.clearTimeout(wakeTimer);
+      wake?.();
+    };
   }, [active?.id, active?.state]);
   const act = async (action: "start" | "pause" | "resume" | "stop") => {
     const response =

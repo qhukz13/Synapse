@@ -23,7 +23,7 @@ The reader shows the active vault path and access mode. Each topic displays its 
 - The first 100-round stress run passed 1,700 checks. The expanded 21-case suite then passed 2,100 checks across 100 independent rounds.
 - Discovery and current PDF/URL totals differ as described in docs/ARCH-NOTES.md. The POSIX write fallback has the final check-to-rename limitation documented in DEVELOPMENT.md.
 - Production build passed. Vite warned that the lazy editor chunk exceeds its default size warning threshold.
-- M7 verification: 131 unit/integration tests pass; TypeScript, ESLint and production build pass. Twelve Chromium checks pass across desktop, medium and compact widths, including timer lifecycle, reload persistence and session history. Aggregation tests cover overlap union, midnight split, thresholds, Kyiv DST, streak continuity and future-end clamping. Service tests cover single-open enforcement, pause/resume totals, idle and heartbeat-loss closure, restore bounds, crash recovery and the 4-hour cap.
+- M7 verification: 131 unit/integration tests pass; TypeScript, ESLint and production build pass. The 12-check full Chromium suite passed across desktop, medium and compact widths. Follow-up timer/history and single-leader handover flows each passed at all three widths. Aggregation tests cover overlap union, midnight split, thresholds, Kyiv DST, streak continuity and future-end clamping. Service tests cover single-open enforcement, pause/resume totals, idle and heartbeat-loss closure, restore bounds, crash recovery and the 4-hour cap.
 
 ## Commits
 
@@ -31,7 +31,7 @@ The reader shows the active vault path and access mode. Each topic displays its 
 
 ## Remaining work
 
-Finish M5 acceptance including manual Obsidian concurrency and recovery verification. M7 still needs leader election and cross-tab handover, segment correction controls, the end-of-session note sheet, streak progress indicator, activity and focus rollups, and wider progress acceptance. Continue with M8 personal notes and exercise completion, M9 attachment management and file viewers, M10 interactive graph and daily dashboard, M11 manual reviews and fuller analytics, then M12–M13 responsive, performance, accessibility and release acceptance.
+Finish M5 acceptance including manual Obsidian concurrency and recovery verification. M7 still needs segment correction controls, the end-of-session note sheet, streak progress indicator, activity and focus rollups, and wider progress acceptance. Continue with M8 personal notes and exercise completion, M9 attachment management and file viewers, M10 interactive graph and daily dashboard, M11 manual reviews and fuller analytics, then M12–M13 responsive, performance, accessibility and release acceptance.
 
 ## M6 repair and migration checkpoint
 
@@ -49,4 +49,4 @@ Course migration previews now let the user supply optional difficulty and import
 
 Session totals derive from explicit active segments. The server monitors heartbeats, records lost-heartbeat time conservatively, auto-pauses idle intervals at the approved backdated point, and permits a one-time restore bounded by the auto-pause time. Restart closes running time at the last heartbeat. The four-hour cap applies to active time. Streak dates use the IANA zone captured in private SQLite state (or the explicitly configured zone); UTC segments are split at local midnight and unioned to avoid double-counting.
 
-The timer polls for another tab’s state. Multiple tabs may send heartbeats; server time remains authoritative. Leader election and handover are not implemented yet, so duplicate heartbeats are tolerated pending that part of M7.
+The timer polls for another tab’s state. Web Locks elect one heartbeat leader and release the lock on tab close or session state change; waiting tabs retry for handover. BroadcastChannel shares user activity so the leader can see interaction in another tab. A localStorage lease is used when Web Locks are unavailable. Server time remains authoritative. Chromium E2E verifies one heartbeat leader and handover when the leader tab closes.

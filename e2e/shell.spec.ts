@@ -32,6 +32,50 @@ test("starts, pauses, resumes and persists a study timer", async ({ page }) => {
     page.getByRole("heading", { name: "Recent sessions" }),
   ).toBeVisible();
 });
+test("elects one timer leader and hands the heartbeat to another tab", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(20_000);
+  const other = await context.newPage();
+  const pages = [page, other];
+  const heartbeats: import("@playwright/test").Page[] = [];
+  for (const tab of pages) {
+    tab.on("request", (request) => {
+      if (
+        request.url().includes("/api/sessions/") &&
+        request.url().endsWith("/heartbeat")
+      )
+        heartbeats.push(tab);
+    });
+    await tab.goto("/");
+  }
+  await page
+    .getByRole("contentinfo", { name: "Study timer" })
+    .getByRole("button", { name: "Start session" })
+    .click();
+  await expect(
+    other
+      .getByRole("contentinfo", { name: "Study timer" })
+      .getByRole("button", { name: "Finish" }),
+  ).toBeVisible();
+  await expect.poll(() => heartbeats.length, { timeout: 3_000 }).toBe(1);
+  const leader = heartbeats[0]!;
+  const follower = leader === page ? other : page;
+  await leader.close();
+  await expect
+    .poll(() => heartbeats.length, { timeout: 10_000 })
+    .toBeGreaterThan(1);
+  await follower
+    .getByRole("contentinfo", { name: "Study timer" })
+    .getByRole("button", { name: "Finish" })
+    .click();
+  await expect(
+    follower
+      .getByRole("contentinfo", { name: "Study timer" })
+      .getByRole("button", { name: "Start session" }),
+  ).toBeVisible();
+});
 
 test("uses vault search, reads a note and follows a prerequisite", async ({
   page,
