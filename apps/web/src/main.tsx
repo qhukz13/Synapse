@@ -1398,7 +1398,16 @@ function Dashboard() {
                     <small>{note.domain || note.folder}</small>
                   </span>
                 </Link>
-                <small>{new Date(note.mtimeMs).toLocaleDateString()}</small>
+                <time
+                  dateTime={new Date(note.mtimeMs).toISOString()}
+                  title={new Date(note.mtimeMs).toLocaleString()}
+                >
+                  {new Intl.DateTimeFormat(undefined, {
+                    month: "short",
+                    day: "numeric",
+                    year: "2-digit",
+                  }).format(note.mtimeMs)}
+                </time>
               </li>
             ))}
           </ul>
@@ -2026,6 +2035,11 @@ function Reader() {
     personalNotes = query<PersonalNoteRow[]>(
       `personal-notes?aboutSlug=${encodeURIComponent(slug)}`,
     );
+  const navigate = useNavigate();
+  const [creatingPersonalNote, setCreatingPersonalNote] = useState(false);
+  const [personalNoteTitle, setPersonalNoteTitle] = useState("");
+  const [personalNoteError, setPersonalNoteError] = useState("");
+  const [creatingNoteBusy, setCreatingNoteBusy] = useState(false);
   useEffect(() => {
     document.title = (note.data?.title ?? "Reading") + " · Synapse";
     return () => {
@@ -2042,6 +2056,39 @@ function Reader() {
       (link) => link.target.toLowerCase() === target.toLowerCase(),
     );
     return found?.slug ? "/t/" + encodeURIComponent(found.slug) : undefined;
+  };
+  const createPersonalNote = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!n || !personalNoteTitle.trim()) return;
+    const isProject = ["project", "course-project"].includes(n.kind);
+    setCreatingNoteBusy(true);
+    setPersonalNoteError("");
+    try {
+      const response = await fetch("/api/personal-notes", {
+        method: "POST",
+        headers: { "x-synapse": "1", "content-type": "application/json" },
+        body: JSON.stringify({
+          title: personalNoteTitle,
+          scope: isProject ? "project" : "topic",
+          aboutSlug: slug,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw Error(result.message ?? "Could not create note.");
+      await client.invalidateQueries({
+        queryKey: ["personal-notes?aboutSlug=" + encodeURIComponent(slug)],
+      });
+      setCreatingPersonalNote(false);
+      setPersonalNoteTitle("");
+      if (result.slug)
+        await navigate({ to: "/notes/$slug", params: { slug: result.slug } });
+    } catch (cause) {
+      setPersonalNoteError(
+        cause instanceof Error ? cause.message : "Could not create note.",
+      );
+    } finally {
+      setCreatingNoteBusy(false);
+    }
   };
   return (
     <>
@@ -2142,6 +2189,54 @@ function Reader() {
       {n.kind !== "note" && (
         <details>
           <summary>Personal notes ({personalNotes.data?.length ?? 0})</summary>
+          {data.data?.writeEnabled && (
+            <div className="topic-note-create">
+              {!creatingPersonalNote ? (
+                <button
+                  type="button"
+                  onClick={() => setCreatingPersonalNote(true)}
+                >
+                  New note for this {n.kind === "project" ? "project" : "topic"}
+                </button>
+              ) : (
+                <form onSubmit={(event) => void createPersonalNote(event)}>
+                  <label>
+                    Note title
+                    <input
+                      aria-label="New note for topic title"
+                      maxLength={200}
+                      required
+                      value={personalNoteTitle}
+                      onChange={(event) =>
+                        setPersonalNoteTitle(event.target.value)
+                      }
+                    />
+                  </label>
+                  <small>
+                    Creates in {data.data.personalNotesRoot}/
+                    {n.kind === "project" ? "Projects" : "Topics"}/
+                    {n.title.replace(/[\\/]/g, " - ")}/
+                    {personalNoteTitle.trim() || "<title>"}.md
+                  </small>
+                  {personalNoteError && <p role="alert">{personalNoteError}</p>}
+                  <div>
+                    <button
+                      type="submit"
+                      disabled={creatingNoteBusy || !personalNoteTitle.trim()}
+                    >
+                      {creatingNoteBusy ? "Creating…" : "Create note"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCreatingPersonalNote(false)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          )}
           {personalNotes.data?.length ? (
             <ul className="rows">
               {personalNotes.data.map((personalNote) => (

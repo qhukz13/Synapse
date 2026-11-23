@@ -1055,6 +1055,40 @@ summary small {
   line-height: 1.45;
   text-overflow: ellipsis;
 }
+.topic-note-create {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.75rem 0;
+}
+.topic-note-create form {
+  display: grid;
+  gap: 0.6rem;
+  max-width: 40rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border-1);
+  border-radius: 8px;
+  background: var(--bg-1);
+}
+.topic-note-create label {
+  display: grid;
+  gap: 0.3rem;
+  color: var(--fg-2);
+  font-size: 0.8rem;
+}
+.topic-note-create small,
+.topic-note-create [role="alert"] {
+  margin: 0;
+  color: var(--fg-3);
+  overflow-wrap: anywhere;
+}
+.topic-note-create [role="alert"] {
+  color: var(--danger);
+}
+.topic-note-create form > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
 .personal-note-editor-label {
   display: block;
   margin: 1.5rem 0 0.45rem;
@@ -1180,19 +1214,28 @@ summary small {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1 1 0;
   min-width: 0;
   color: var(--fg-1);
   text-decoration: none;
 }
 .recent-notes li > a > span {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.recent-notes li small {
+.recent-notes li small,
+.recent-notes li > time {
   display: block;
   color: var(--fg-3);
   font-size: 0.68rem;
+}
+.recent-notes li > time {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  text-align: right;
 }
 .dashboard-resources li {
   display: flex;

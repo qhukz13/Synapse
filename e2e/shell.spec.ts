@@ -55,6 +55,26 @@ test("creates, autosaves and searches a scoped personal note", async ({
   );
 });
 
+test("creates a personal note directly from its topic", async ({
+  page,
+}, testInfo) => {
+  const title = `Topic capture ${Date.now()} ${testInfo.project.name}`;
+  await page.goto("/t/vectors");
+  await page.getByText(/^Personal notes \(\d+\)$/).click();
+  await page.getByRole("button", { name: "New note for this topic" }).click();
+  await page
+    .getByRole("textbox", { name: "New note for topic title" })
+    .fill(title);
+  await expect(page.locator(".topic-note-create small")).toContainText(
+    `Personal Notes/Topics/Vectors/${title}.md`,
+  );
+  await page.getByRole("button", { name: "Create note" }).click();
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+  await expect(page.locator(".crumb")).toContainText(
+    "Personal Notes/Topics/Vectors",
+  );
+});
+
 test("persists app-only exercise ticks across reloads", async ({ page }) => {
   await page.goto("/t/python");
   await page.getByText(/^Practice \(\d+\/\d+ complete\)$/).click();
@@ -144,6 +164,21 @@ test("shows real dashboard recommendations and persists resource completion", as
   await expect(
     page.getByRole("heading", { name: "Learning progress" }),
   ).toBeVisible();
+  const editedPanel = page.locator(".dash-edited");
+  const editedDate = editedPanel.locator(".recent-notes li > time").first();
+  await expect(editedDate).toBeVisible();
+  const panelBounds = await editedPanel.boundingBox();
+  const dateBounds = await editedDate.boundingBox();
+  expect(panelBounds).not.toBeNull();
+  expect(dateBounds).not.toBeNull();
+  expect(dateBounds!.x).toBeGreaterThanOrEqual(panelBounds!.x);
+  expect(dateBounds!.x + dateBounds!.width).toBeLessThanOrEqual(
+    panelBounds!.x + panelBounds!.width - 4,
+  );
+  expect(dateBounds!.y).toBeGreaterThanOrEqual(panelBounds!.y);
+  expect(dateBounds!.y + dateBounds!.height).toBeLessThanOrEqual(
+    panelBounds!.y + panelBounds!.height - 4,
+  );
   await page.getByText("Domain, module & project rollups").click();
   await expect(
     page.getByRole("heading", { name: "By domain", exact: true }),
