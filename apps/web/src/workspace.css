@@ -243,3 +243,30 @@ summary small {
 .studio .synapse-reader {
   margin-top: 1rem;
 }
+.vault-path {
+  overflow-wrap: anywhere;
+  font-family: var(--font-code);
+  font-size: 0.8rem;
+}
+.note-properties {
+  margin: 0 0 14px;
+}
+.note-properties > div {
+  display: grid;
+  grid-template-columns: minmax(84px, 1fr) minmax(0, 3fr);
+  gap: 14px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border-1);
+  overflow-wrap: anywhere;
+}
+.note-properties dt {
+  color: var(--fg-3);
+  font-family: var(--font-code);
+}
+.note-properties dd {
+  margin: 0;
+}
+.note-properties ul {
+  margin: 0;
+  padding-inline-start: 18px;
+}

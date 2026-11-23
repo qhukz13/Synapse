@@ -215,3 +215,33 @@ it("requires opt-in, saves an authorized edit and exposes stale source without o
     await writable.app.close();
   }
 });
+
+it("returns the entire original Markdown body and the vault connection details", async () => {
+  await ctx.work.refresh();
+  const file = await readFile(
+    join(
+      root,
+      "vault",
+      "04 - Classical Machine Learning",
+      "Linear Regression.md",
+    ),
+    "utf8",
+  );
+  const response = await ctx.app.inject({
+    url: "/api/topics/linear-regression",
+    headers,
+  });
+  const note = response.json();
+  expect(response.statusCode).toBe(200);
+  expect(note.body).toBe(file.slice(note.fm.bodyStart));
+  expect(note.fm.meta).toMatchObject({
+    type: "concept",
+    domain: "machine-learning",
+    prerequisites: ["Dot Products"],
+  });
+  const summary = await ctx.app.inject({ url: "/api/index/summary", headers });
+  expect(summary.json()).toMatchObject({
+    vaultPath: join(root, "vault"),
+    writeEnabled: false,
+  });
+});

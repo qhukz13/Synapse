@@ -106,6 +106,7 @@ function registerRead(
     ...catalogue(work.index),
     unavailable: work.unavailable,
     writeEnabled: config.allowVaultWrites,
+    vaultPath: config.vaultPath,
   }));
   app.get("/api/topics", (req) => {
     const filters = z.record(z.string(), z.string()).parse(req.query);

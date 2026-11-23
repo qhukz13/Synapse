@@ -11,6 +11,10 @@ M5, editing and synchronization. Synapse is usable as a local vault reader. The 
 - M3–M4 added the responsive reader, Markdown and KaTeX rendering, local search, folder/domain/Learning Path grouping, URL-filtered list, resources and practice displays, library links, and a read-only Vault Health view. The full shell, command palette and all-note browser rendering sweep are pending.
 - M5 added the audited write coordinator, opt-in CodeMirror source editor with preview, guarded status and checkbox actions, conflict comparison, backups, file history, and explicit restore. Draft persistence, automatic three-way merge, the full metadata form, mirror controls and conflict-copy resolution are pending.
 
+## Vault connection and Properties
+
+The reader shows the active vault path and access mode. Each topic displays its parsed frontmatter, including custom fields, and passes the entire original Markdown body to the renderer. The application checkout may use an ignored read-only real-vault configuration. Browser tests use an independently seeded temporary vault. Structured property editing beyond status is pending.
+
 ## Verification
 
 - The 119-check suite passed after write routes were integrated. The independent vault snapshot reported zero changes across 227 files, including all 194 Markdown notes.

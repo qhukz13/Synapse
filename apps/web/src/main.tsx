@@ -44,9 +44,13 @@ function query<T>(url: string, enabled = true) {
   });
 }
 const summary = () =>
-  query<Catalogue & { unavailable: string; writeEnabled: boolean }>(
-    "index/summary",
-  );
+  query<
+    Catalogue & {
+      unavailable: string;
+      writeEnabled: boolean;
+      vaultPath: string;
+    }
+  >("index/summary");
 function Layout() {
   const navigate = useNavigate();
   useEffect(() => {
@@ -148,7 +152,13 @@ function Curriculum() {
     <>
       <header>
         <h1>Learning path</h1>
-        <p>Browse {result.data.topics.length} notes in your vault.</p>
+        <p>
+          {result.data.topics.length} Markdown files ·{" "}
+          {result.data.writeEnabled ? "Editing enabled" : "Read-only"}
+        </p>
+        <p className="vault-path" title={result.data.vaultPath}>
+          {result.data.vaultPath}
+        </p>
       </header>
       <input
         aria-label="Filter topics"
@@ -513,6 +523,65 @@ function FileHistory({ note, writable }: { note: Topic; writable: boolean }) {
     </details>
   );
 }
+function Properties({ note, topics }: { note: Topic; topics: TopicRow[] }) {
+  const entries = Object.entries(note.fm.meta);
+  if (!entries.length)
+    return (
+      <details>
+        <summary>Properties</summary>
+        <p>
+          {note.fm.error
+            ? "The frontmatter could not be read."
+            : "This file has no frontmatter properties."}
+        </p>
+      </details>
+    );
+  function display(value: unknown) {
+    if (typeof value === "string") {
+      const target = value.replace(/^\[\[(.*?)\]\]$/, "$1");
+      const match = topics.find(
+        (topic) => topic.title.toLowerCase() === target.toLowerCase(),
+      );
+      if (match)
+        return (
+          <Link to="/t/$slug" params={{ slug: match.slug }}>
+            {value}
+          </Link>
+        );
+      return value || <em>Empty string</em>;
+    }
+    if (value === null) return "null";
+    if (typeof value === "object") return <code>{JSON.stringify(value)}</code>;
+    return String(value);
+  }
+  return (
+    <details>
+      <summary>Properties ({entries.length})</summary>
+      <dl className="note-properties">
+        {entries.map(([key, value]) => (
+          <div key={key}>
+            <dt>{key}</dt>
+            <dd>
+              {Array.isArray(value) ? (
+                value.length ? (
+                  <ul>
+                    {value.map((item, index) => (
+                      <li key={index}>{display(item)}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <code>[]</code>
+                )
+              ) : (
+                display(value)
+              )}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </details>
+  );
+}
 function Reader() {
   const { slug } = useParams({ from: "/t/$slug" }),
     data = summary(),
@@ -527,6 +596,8 @@ function Reader() {
   }, [note.data?.title]);
   const n = note.data;
   if (!n) return <p role="status">{note.error?.message ?? "Opening note…"}</p>;
+  const hasLeadingHeading =
+    /^\s{0,3}(?:\r?\n[ \t]{0,3})*# +[^\r\n]+(?:\r?\n|$)/.test(n.body);
   const prereqs = data.data?.prerequisites[slug];
   const resolveLink = (target: string) => {
     const found = n.links.find(
@@ -548,7 +619,7 @@ function Reader() {
         )}
       </div>
       <header>
-        <h1>{n.heading || n.title}</h1>
+        {!hasLeadingHeading && <h1>{n.heading || n.title}</h1>}
         <p>
           {[
             n.domain,
@@ -574,6 +645,7 @@ function Reader() {
           Metadata issue on line {n.fm.line}. {n.fm.error}
         </p>
       )}
+      <Properties note={n} topics={data.data?.topics ?? []} />
       {prereqs &&
         (["met", "unmet", "laterInPath", "missing"] as const).some(
           (key) => prereqs[key].length > 0,
@@ -646,13 +718,7 @@ function Reader() {
         writable={data.data?.writeEnabled === true}
       />
       <Suspense fallback={<p role="status">Rendering note…</p>}>
-        <MarkdownView
-          source={n.body.replace(
-            /^\s{0,3}(?:\r?\n[ \t]{0,3})*# +[^\r\n]+(?:\r?\n|$)/,
-            "",
-          )}
-          resolveLink={resolveLink}
-        />
+        <MarkdownView source={n.body} resolveLink={resolveLink} />
       </Suspense>
     </>
   );
