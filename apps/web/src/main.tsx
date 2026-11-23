@@ -342,10 +342,29 @@ function StudyTimer() {
         <output aria-live="off">{format(elapsed)}</output>
       )}
       {stats.data && (
-        <small title="Qualifying study days require 10 minutes">
-          {stats.data.streak.current} day streak ·{" "}
-          {Math.floor(stats.data.todayMs / 60_000)}m today
-        </small>
+        <span
+          className="timer-streak"
+          title="A day qualifies for a streak after 10 minutes of recorded study"
+        >
+          <small>
+            {stats.data.streak.current} day streak ·{" "}
+            {Math.floor(stats.data.todayMs / 60_000)}m today
+          </small>
+          <span
+            className="timer-streak-track"
+            role="progressbar"
+            aria-label="Daily streak qualification"
+            aria-valuenow={Math.min(100, Math.floor(stats.data.todayMs / 6000))}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <span
+              style={{
+                width: `${Math.min(100, (stats.data.todayMs / 600_000) * 100)}%`,
+              }}
+            />
+          </span>
+        </span>
       )}
       {!active && (
         <button onClick={() => void act("start")}>Start session</button>

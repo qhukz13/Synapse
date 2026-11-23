@@ -40,6 +40,9 @@ test("starts, pauses, resumes and persists a study timer", async ({ page }) => {
   await timer.getByRole("button", { name: "Start session" }).click();
   await expect(timer.getByRole("button", { name: "Pause" })).toBeVisible();
   await expect(timer.locator("output")).toBeVisible();
+  await expect(
+    timer.getByRole("progressbar", { name: "Daily streak qualification" }),
+  ).toBeVisible();
   await timer.getByRole("button", { name: "Pause" }).click();
   await expect(timer.getByRole("button", { name: "Resume" })).toBeVisible();
   await timer.getByRole("button", { name: "Resume" }).click();

@@ -324,6 +324,28 @@ summary small {
   font-family: var(--font-code);
   font-variant-numeric: tabular-nums;
 }
+.study-timer .timer-streak {
+  display: grid;
+  gap: 3px;
+  min-width: 110px;
+  color: var(--fg-3);
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+.timer-streak-track {
+  display: block;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--bg-3);
+}
+.timer-streak-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--success);
+  transition: width 0.25s ease;
+}
 .session-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -383,6 +405,10 @@ summary small {
   }
   .study-timer small {
     font-size: 0.7rem;
+  }
+  .study-timer .timer-streak {
+    min-width: 72px;
+    font-size: 0.64rem;
   }
   .study-timer output {
     min-width: 58px;
