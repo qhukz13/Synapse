@@ -458,6 +458,7 @@ export class SessionService {
       started_at: number;
       ended_at: number | null;
       state: string;
+      nid: string | null;
       seg_start: number;
       seg_end: number | null;
     }[];
@@ -466,6 +467,21 @@ export class SessionService {
       start: r.seg_start,
       end: r.seg_end ?? (r.state === "running" ? now : r.seg_start),
     }));
+    const byTopic = new Map<string, typeof intervals>();
+    const general: typeof intervals = [];
+    rows.forEach((row, index) => {
+      if (row.nid === null) general.push(intervals[index]!);
+      else {
+        const group = byTopic.get(row.nid) ?? [];
+        group.push(intervals[index]!);
+        byTopic.set(row.nid, group);
+      }
+    });
+    const intervalTotal = (group: typeof intervals) =>
+      Object.values(dailyStudyTime(group, this.zone, now)).reduce(
+        (sum, ms) => sum + ms,
+        0,
+      );
     const dailyMs = dailyStudyTime(intervals, this.zone, now);
     const today = Temporal.Instant.fromEpochMilliseconds(now)
       .toZonedDateTimeISO(this.zone)
@@ -478,6 +494,10 @@ export class SessionService {
       streak: streakSummary(dailyMs, today),
       totalMs: Object.values(dailyMs).reduce((a, b) => a + b, 0),
       todayMs: dailyMs[today] ?? 0,
+      focusByNid: Object.fromEntries(
+        [...byTopic].map(([nid, group]) => [nid, intervalTotal(group)]),
+      ),
+      generalMs: intervalTotal(general),
     };
   }
 }

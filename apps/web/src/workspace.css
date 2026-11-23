@@ -778,6 +778,54 @@ summary small {
   height: 4px;
   margin: 3px 0 0;
 }
+.progress-rollups {
+  margin-top: 1rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--border-1);
+  color: var(--fg-2);
+  font-size: 0.78rem;
+}
+.progress-rollups summary {
+  cursor: pointer;
+  color: var(--fg-2);
+}
+.rollup-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: 0.8rem;
+  max-height: 23rem;
+  overflow: auto;
+  margin-top: 0.85rem;
+  padding-right: 0.3rem;
+}
+.rollup-columns section h3 {
+  margin: 0 0 0.4rem;
+  color: var(--fg-1);
+  font-size: 0.75rem;
+}
+.rollup-columns ul {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rollup-columns li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--border-1);
+}
+.rollup-columns li > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rollup-columns li > small {
+  flex: none;
+  color: var(--fg-3);
+}
 .study-bars {
   display: grid;
   grid-template-columns: repeat(14, minmax(0, 1fr));
@@ -810,6 +858,50 @@ summary small {
 .study-bar-day small {
   font-size: 0.62rem;
   color: var(--fg-3);
+}
+.focus-rollup {
+  margin-top: 1.15rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border-1);
+}
+.focus-rollup h3 {
+  margin: 0 0 0.65rem;
+  color: var(--fg-2);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.focus-rollup ul {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.focus-rollup li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(3rem, 0.7fr) 2.2rem;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.76rem;
+}
+.focus-rollup li > span:first-child {
+  overflow: hidden;
+  color: var(--fg-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.focus-track {
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--bg-3);
+}
+.focus-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
 }
 .activity-list,
 .recent-notes,

@@ -109,6 +109,12 @@ it("persists topic-linked study sessions through the local API", async () => {
   expect(history.find((item) => item.id === session.id)?.note).toBe(
     "Review gradient descent next.",
   );
+  const focus = (
+    await ctx.app.inject({ url: "/api/stats/study", headers })
+  ).json().focusByDomain as { domain: string; ms: number }[];
+  expect(focus).toContainEqual(
+    expect.objectContaining({ domain: "machine-learning" }),
+  );
 });
 it("returns deterministic recommendations and persists resource completion", async () => {
   const first = (

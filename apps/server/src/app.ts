@@ -336,10 +336,32 @@ function registerRead(
   });
 }
 
-function registerSessions({ app, nid, sessions }: Context) {
+function registerSessions({ app, nid, sessions, work }: Context) {
   app.get("/api/sessions/current", () => sessions.current());
   app.get("/api/sessions", () => sessions.list());
-  app.get("/api/stats/study", () => sessions.stats());
+  app.get("/api/stats/study", () => {
+    const stats = sessions.stats();
+    const domainMs = new Map<string, number>();
+    for (const [topicNid, ms] of Object.entries(stats.focusByNid)) {
+      const topic = work.index.nodes.find(
+        (node) => nid(node.slug) === topicNid,
+      );
+      const domain =
+        topic?.domain || (topic ? "Unassigned domain" : "Unlinked topic");
+      domainMs.set(domain, (domainMs.get(domain) ?? 0) + ms);
+    }
+    if (stats.generalMs)
+      domainMs.set(
+        "General study",
+        (domainMs.get("General study") ?? 0) + stats.generalMs,
+      );
+    return {
+      ...stats,
+      focusByDomain: [...domainMs]
+        .map(([domain, ms]) => ({ domain, ms }))
+        .sort((a, b) => b.ms - a.ms || a.domain.localeCompare(b.domain)),
+    };
+  });
   app.post("/api/sessions", (req) => {
     const { topicSlug } = z
       .object({ topicSlug: z.string().optional() })

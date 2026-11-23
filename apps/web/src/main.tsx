@@ -668,6 +668,7 @@ function StudyHistory() {
     todayMs: number;
     totalMs: number;
     dailyMs: Record<string, number>;
+    focusByDomain: { domain: string; ms: number }[];
     streak: { current: number; longest: number };
   }>("stats/study", true, 30_000);
   const sessions = query<SessionRecord[]>("sessions");
@@ -905,6 +906,7 @@ function Dashboard() {
       todayMs: number;
       totalMs: number;
       dailyMs: Record<string, number>;
+      focusByDomain: { domain: string; ms: number }[];
       streak: { current: number; longest: number };
     }>("stats/study"),
     resources = query<ResourceRow[]>("resources"),
@@ -955,6 +957,41 @@ function Dashboard() {
         done,
       };
     });
+  const groupedProgress = (
+    items: TopicRow[],
+    groupName: (topic: TopicRow) => string,
+  ) => {
+    const groups = new Map<string, TopicRow[]>();
+    for (const topic of items) {
+      const name = groupName(topic) || "Unassigned";
+      groups.set(name, [...(groups.get(name) ?? []), topic]);
+    }
+    return [...groups]
+      .map(([name, members]) => ({
+        name,
+        total: members.length,
+        done: members.filter((topic) => topic.status.category === "completed")
+          .length,
+        active: members.filter(
+          (topic) => topic.status.category === "in_progress",
+        ).length,
+      }))
+      .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+  };
+  const domainProgress = groupedProgress(
+      learning,
+      (topic) => topic.domain || "Unassigned domain",
+    ),
+    moduleProgress = groupedProgress(learning, (topic) => topic.folder),
+    projects = topics.filter((topic) =>
+      ["project", "course-project"].includes(topic.kind),
+    ),
+    projectProgress = ["not-started", "in-progress", "completed"].map(
+      (status) => ({
+        name: status,
+        total: projects.filter((topic) => topic.status.value === status).length,
+      }),
+    );
   const current = recs?.continue[0] ?? recs?.next[0],
     next = recs?.next.slice(0, 5) ?? [],
     recentSessions = sessions.data ?? [];
@@ -1208,6 +1245,40 @@ function Dashboard() {
               </div>
             ))}
           </div>
+          <details className="progress-rollups">
+            <summary>Domain, module & project rollups</summary>
+            <div className="rollup-columns">
+              {[
+                { title: "By domain", rows: domainProgress },
+                { title: "By module", rows: moduleProgress },
+              ].map((group) => (
+                <section key={group.title}>
+                  <h3>{group.title}</h3>
+                  <ul>
+                    {group.rows.map((row) => (
+                      <li key={row.name}>
+                        <span>{row.name}</span>
+                        <small>
+                          {row.done}/{row.total} complete · {row.active} active
+                        </small>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
+              <section>
+                <h3>Projects by status</h3>
+                <ul>
+                  {projectProgress.map((row) => (
+                    <li key={row.name}>
+                      <span>{row.name}</span>
+                      <small>{row.total}</small>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            </div>
+          </details>
         </section>
         <section className="dashboard-panel dash-study">
           <div className="panel-heading">
@@ -1240,6 +1311,29 @@ function Dashboard() {
             Outlined days meet the 10 minute streak threshold ·{" "}
             {stats.data?.timeZone}
           </small>
+          {!!stats.data?.focusByDomain.length && (
+            <div className="focus-rollup">
+              <h3>Focus by domain</h3>
+              <ul>
+                {stats.data.focusByDomain.slice(0, 5).map((item) => {
+                  const maximum = stats.data!.focusByDomain[0]!.ms;
+                  return (
+                    <li key={item.domain}>
+                      <span>{item.domain}</span>
+                      <span className="focus-track">
+                        <span
+                          style={{
+                            width: `${maximum ? (item.ms / maximum) * 100 : 0}%`,
+                          }}
+                        />
+                      </span>
+                      <small>{Math.floor(item.ms / 60_000)}m</small>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
         </section>
         <section className="dashboard-panel dash-activity">
           <div className="panel-heading">

@@ -10,6 +10,13 @@ test("shows real dashboard recommendations and persists resource completion", as
   await expect(
     page.getByRole("heading", { name: "Learning progress" }),
   ).toBeVisible();
+  await page.getByText("Domain, module & project rollups").click();
+  await expect(
+    page.getByRole("heading", { name: "By domain", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Projects by status" }),
+  ).toBeVisible();
   await expect(
     page.getByText(/Prerequisites help order suggestions/),
   ).toBeVisible();
@@ -82,6 +89,11 @@ test("starts, pauses, resumes and persists a study timer", async ({ page }) => {
   await expect(page.locator(".session-note").first()).toHaveText(
     "Reviewed the material; continue with gradient descent.",
   );
+  await page.getByRole("link", { name: "Dashboard" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Focus by domain" }),
+  ).toBeVisible();
+  await expect(page.locator(".focus-rollup li").first()).toBeVisible();
 });
 test("elects one timer leader and hands the heartbeat to another tab", async ({
   page,
