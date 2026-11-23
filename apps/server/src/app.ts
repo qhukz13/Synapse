@@ -1,6 +1,7 @@
 import { registerChangesets } from "./routes/changesets";
 import { registerEditor } from "./routes/editor";
 import { registerNotes } from "./routes/notes";
+import { registerPractice } from "./routes/practice";
 import { WriteCoordinator, WriteError } from "./vault/writes";
 import Fastify, { type FastifyInstance } from "fastify";
 import staticFiles from "@fastify/static";
@@ -46,6 +47,7 @@ export async function createApp(config: Config, dev = false) {
   registerRead(ctx, writer);
   registerEditor(ctx, writer);
   registerNotes(ctx, writer);
+  registerPractice(ctx);
   registerChangesets(ctx, writer);
   registerSessions(ctx);
   app.get("/api/events", (req, reply) => {
@@ -145,7 +147,9 @@ function registerRead(
         ? (work.scan.files.find(
             (source) => source.path === config.courseHomeNote,
           )?.hash ?? null)
-        : null;
+        : note.exercises.some((item) => item.offset !== null)
+          ? file.hash
+          : null;
     return { ...note, body: file.text.slice(note.fm.bodyStart), checkboxHash };
   });
   app.get<{ Params: { slug: string } }>("/api/topics/:slug/source", (req) => {

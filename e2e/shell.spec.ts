@@ -49,6 +49,25 @@ test("creates, autosaves and searches a scoped personal note", async ({
   ).toBeVisible();
 });
 
+test("persists app-only exercise ticks across reloads", async ({ page }) => {
+  await page.goto("/t/python");
+  await page.getByText(/^Practice \(\d+\/\d+ complete\)$/).click();
+  const exercise = page.getByRole("checkbox", {
+    name: /Predict the output for reading 0/,
+  });
+  const initial = await exercise.isChecked();
+  await exercise.click();
+  await expect(exercise).toBeChecked({ checked: !initial });
+  await page.reload();
+  await page.getByText(/^Practice \(\d+\/\d+ complete\)$/).click();
+  const reloaded = page.getByRole("checkbox", {
+    name: /Predict the output for reading 0/,
+  });
+  await expect(reloaded).toBeChecked({ checked: !initial });
+  await reloaded.click();
+  await expect(reloaded).toBeChecked({ checked: initial });
+});
+
 test("shows real dashboard recommendations and persists resource completion", async ({
   page,
 }) => {

@@ -1872,6 +1872,151 @@ function Properties({ note, topics }: { note: Topic; topics: TopicRow[] }) {
     </details>
   );
 }
+type PracticeData = {
+  exercises: (Topic["exercises"][number] & {
+    done: boolean;
+    source: "app" | "markdown";
+  })[];
+  orphans: {
+    fingerprint: string;
+    section: string;
+    ordinal: number;
+    text_snapshot: string;
+    done_at: number;
+  }[];
+};
+function PracticePanel({
+  note,
+  checkboxHash,
+  writable,
+}: {
+  note: Topic;
+  checkboxHash: string | null;
+  writable: boolean;
+}) {
+  const result = query<PracticeData>(
+    "practice/" + encodeURIComponent(note.slug),
+    note.exercises.length > 0,
+  );
+  const [pending, setPending] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [optimistic, setOptimistic] = useState<Record<string, boolean>>({});
+  const items = result.data?.exercises ?? [];
+  const toggle = async (
+    item: PracticeData["exercises"][number],
+    done: boolean,
+  ) => {
+    setPending(item.fingerprint);
+    setError("");
+    setOptimistic((current) => ({ ...current, [item.fingerprint]: done }));
+    try {
+      const response =
+        item.source === "markdown"
+          ? await fetch(
+              `/api/topics/${encodeURIComponent(note.slug)}/checkbox`,
+              {
+                method: "POST",
+                headers: {
+                  "x-synapse": "1",
+                  "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                  baseHash: note.hash,
+                  offset: item.offset!,
+                  checked: done,
+                  expectedChecked: item.done,
+                }),
+              },
+            )
+          : await fetch(`/api/practice/${encodeURIComponent(note.slug)}`, {
+              method: "POST",
+              headers: { "x-synapse": "1", "content-type": "application/json" },
+              body: JSON.stringify({ fingerprint: item.fingerprint, done }),
+            });
+      if (!response.ok) {
+        const payload = await response.json();
+        throw Error(payload.message ?? "Exercise progress could not be saved.");
+      }
+      await client.invalidateQueries({
+        queryKey: ["practice/" + encodeURIComponent(note.slug)],
+      });
+      if (item.source === "markdown") {
+        await client.invalidateQueries({
+          queryKey: ["topics/" + encodeURIComponent(note.slug)],
+        });
+      }
+      setOptimistic((current) => {
+        const next = { ...current };
+        delete next[item.fingerprint];
+        return next;
+      });
+    } catch (cause) {
+      setOptimistic((current) => {
+        const next = { ...current };
+        delete next[item.fingerprint];
+        return next;
+      });
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Exercise progress could not be saved.",
+      );
+    } finally {
+      setPending(null);
+    }
+  };
+  if (!note.exercises.length) return null;
+  const isDone = (item: PracticeData["exercises"][number]) =>
+    optimistic[item.fingerprint] ?? item.done;
+  const completed = items.filter(isDone).length;
+  return (
+    <details>
+      <summary>
+        Practice ({completed}/{note.exercises.length} complete)
+      </summary>
+      {result.error && <p role="alert">{result.error.message}</p>}
+      <ol className="practice-list">
+        {items.map((item) => (
+          <li key={`${item.section}-${item.ordinal}-${item.fingerprint}`}>
+            <label>
+              <input
+                type="checkbox"
+                checked={isDone(item)}
+                disabled={
+                  pending !== null ||
+                  (item.source === "markdown" && (!writable || !checkboxHash))
+                }
+                aria-label={`Complete exercise: ${item.text}`}
+                onChange={(event) => void toggle(item, event.target.checked)}
+              />
+              <span>{item.text}</span>
+            </label>
+            <small>{item.section}</small>
+          </li>
+        ))}
+      </ol>
+      {items.some((item) => item.source === "markdown" && !writable) && (
+        <small>
+          Markdown checkboxes are disabled while this vault is read-only.
+        </small>
+      )}
+      {error && <p role="alert">{error}</p>}
+      {!!result.data?.orphans.length && (
+        <details className="exercise-orphans">
+          <summary>Changed or removed ({result.data.orphans.length})</summary>
+          <ul>
+            {result.data.orphans.map((item) => (
+              <li key={item.fingerprint}>
+                {item.text_snapshot}
+                <small>{item.section}</small>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </details>
+  );
+}
 function Reader() {
   const { slug } = useParams({ from: "/t/$slug" }),
     data = summary(),
@@ -2014,18 +2159,11 @@ function Reader() {
           <Link to="/notes">Open personal notes</Link>
         </details>
       )}
-      <details>
-        <summary>Practice ({n.exercises.length})</summary>
-        {n.exercises.length ? (
-          <ol>
-            {n.exercises.map((item) => (
-              <li key={item.section + item.ordinal}>{item.text}</li>
-            ))}
-          </ol>
-        ) : (
-          <p>This note has no practice items.</p>
-        )}
-      </details>
+      <PracticePanel
+        note={n}
+        checkboxHash={n.checkboxHash}
+        writable={data.data?.writeEnabled === true}
+      />
       <FileHistory
         key={slug}
         note={n}

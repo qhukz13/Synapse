@@ -2,7 +2,7 @@
 
 ## Current milestone
 
-M8, Personal notes (first create/read/save vertical slice). The dashboard foundation and M7 focus/progress rollups are implemented; M8 note management and practice, the full F1–F24 release, and the remaining acceptance work are still in development.
+M8, Personal notes and practice (first create/read/save and exercise-progress vertical slices). The dashboard foundation and M7 focus/progress rollups are implemented; broader M8 note management, the full F1–F24 release, and remaining acceptance work are still in development.
 
 ## Implemented
 
@@ -13,6 +13,7 @@ M8, Personal notes (first create/read/save vertical slice). The dashboard founda
 - M7 adds persistent sessions with server-side lifecycle controls, topic association, heartbeat loss and restart recovery, idle auto-pause and bounded restore, an active-time cap, audit history, timezone-aware totals and streaks, a global timer with the ten-minute streak qualification hairline, a session history view, explicit shorten-only corrections for completed intervals, and an end-of-session note dialog. Notes are saved with the session and shown in history. The dashboard includes domain focus time and expandable progress rollups by stage, domain, module/folder, and project status. Corrections are audited; removal requires confirmation and extension is rejected.
 - M10 dashboard foundation: `/` is now a data-backed dashboard; the curriculum tree lives at `/roadmap/tree`. It shows real continue/next suggestions and reasons, status-derived stage progress, measured study/streak data, recent activity, recently modified vault files and health errors. The Resources page lists deduplicated curriculum links, topic associations and a persisted completed/uncompleted toggle. Deterministic recommendation rules are in the pure core and never exclude topics because of prerequisites.
 - M8 notes first slice: the Notes API lists and filters indexed notes, searches the contentless index, creates scoped Markdown files with minimal metadata through the guarded writer, reads note source, and saves with exact-hash conflict detection. The Notes UI supports scoped creation with path preview, editing, 700 ms autosave, pagehide flush, and explicit external-version comparison/resolution. Topic pages list associated personal notes and note pages link back to their topic. Note text remains in Markdown and the isolated persistence test confirms it is absent from SQLite.
+- M8 practice first slice: Markdown checklist items update only through the existing hash-guarded vault writer. Other exercise completion ticks persist in SQLite without copying exercise text into app storage. Matching reworded exercises carry their completion by section/ordinal and text similarity; removed or substantially changed completed exercises remain visible as orphans. This slice is covered by isolated API tests and a browser reload-persistence workflow.
 
 ## Vault connection and Properties
 
@@ -29,7 +30,7 @@ The reader shows the active vault path and access mode. Each topic displays its 
 - Session correction verification: 139 unit/integration tests pass, including API checks that shorten a recorded interval, reject extensions, require confirmation to remove it, and persist the audit record. TypeScript, ESLint, and production build pass. The build retains the existing large editor chunk warning.
 - Session wrap-up verification: 139 unit/integration tests pass; TypeScript, ESLint, and production build pass. All 18 Chromium E2E checks pass at desktop, medium, and compact widths, including adding and displaying an end-of-session note and clean cross-tab session handover. Browser tests use an isolated temporary fixture vault.
 - M7 focus and progress rollups: API focus totals group recorded intervals by linked topic and domain; same-topic overlaps are unioned and general-study time remains separately labeled. Dashboard domain/module/project rollups use actual topic metadata and canonical status categories. Verified by the 139-test suite, TypeScript, ESLint, production build, and all 18 isolated Chromium E2E checks across three viewport sizes.
-- M8 notes verification: 140 unit/integration tests pass; TypeScript, ESLint and production build pass; all 21 isolated Chromium E2E checks pass at desktop, medium and compact sizes. Note E2E covers scoped path preview, Markdown creation, autosave, a close-within-one-second pagehide flush, reload persistence, and content search. API coverage checks vault-wide name collision, stale-hash rejection and no note text in SQLite.
+- M8 notes and practice verification: 141 unit/integration tests pass; TypeScript, ESLint and production build pass; all 24 isolated Chromium E2E checks pass at desktop, medium and compact sizes. Note E2E covers scoped path preview, Markdown creation, autosave, a close-within-one-second pagehide flush, reload persistence, and content search. Practice coverage checks guarded Markdown updates, durable app-only exercise ticks, reword matching, and orphan preservation. API coverage checks vault-wide name collision, stale-hash rejection and no note text in SQLite.
 
 ## Commits
 
@@ -37,7 +38,7 @@ The reader shows the active vault path and access mode. Each topic displays its 
 
 ## Remaining work
 
-M8 still needs append, move, rename, trash, richer note navigation/preview, topic Notes tabs, and exercise tracking/practice views. M7 still needs broader AC12 restart/backup acceptance and fuller activity coverage for external edits. The dashboard still needs manual review panels and recommendation refinements. M9 attachment management and file viewers, the M10 interactive graph and full dashboard, M11 manual reviews and fuller analytics, then M12–M13 responsive, performance, accessibility and release acceptance remain.
+M8 still needs append, move, rename, trash, richer note navigation/preview and topic Notes tabs; practice needs project milestones/checklist UX and broader real-curriculum review. M7 still needs broader AC12 restart/backup acceptance and fuller activity coverage for external edits. The dashboard still needs manual review panels and recommendation refinements. M9 attachment management and file viewers, the M10 interactive graph and full dashboard, M11 manual reviews and fuller analytics, then M12–M13 responsive, performance, accessibility and release acceptance remain.
 
 ## M6 repair and migration checkpoint
 

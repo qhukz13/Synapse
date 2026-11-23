@@ -481,6 +481,113 @@ it("creates and saves personal notes through guarded Markdown writes", async () 
   }
 });
 
+it("tracks app exercises, preserves reworded ticks and keeps removed items as orphans", async () => {
+  const vault = join(root, "vault");
+  const path = "01 - Foundations/Python.md";
+  const file = join(vault, path);
+  const original = await readFile(file, "utf8");
+  const writable = await createApp(
+    configFrom({
+      vaultPath: vault,
+      dataDir: join(root, "practice-state"),
+      allowVaultWrites: true,
+    }),
+  );
+  const mutation = {
+    ...headers,
+    origin: "http://127.0.0.1:4317",
+    "x-synapse": "1",
+  };
+  try {
+    const seeded = original.replace(
+      "## Exercises\n",
+      "## Exercises\n\n- [ ] Verify the sensor example.\n",
+    );
+    await writeFile(file, seeded);
+    await writable.work.refresh();
+    const initial = (
+      await writable.app.inject({ url: "/api/practice/python", headers })
+    ).json();
+    const first = initial.exercises.find((item: { text: string }) =>
+      item.text.startsWith("Predict the output"),
+    );
+    expect(first.done).toBe(false);
+    expect(first.source).toBe("app");
+    const toggle = await writable.app.inject({
+      method: "POST",
+      url: "/api/practice/python",
+      headers: mutation,
+      payload: { fingerprint: first.fingerprint, done: true },
+    });
+    expect(toggle.statusCode).toBe(200);
+    expect(
+      toggle
+        .json()
+        .exercises.find(
+          (item: { fingerprint: string }) =>
+            item.fingerprint === first.fingerprint,
+        ).done,
+    ).toBe(true);
+
+    const checkbox = initial.exercises.find(
+      (item: { text: string }) => item.text === "Verify the sensor example.",
+    );
+    expect(checkbox.source).toBe("markdown");
+    const topic = (
+      await writable.app.inject({ url: "/api/topics/python", headers })
+    ).json();
+    const checkboxWrite = await writable.app.inject({
+      method: "POST",
+      url: "/api/topics/python/checkbox",
+      headers: mutation,
+      payload: {
+        baseHash: topic.hash,
+        offset: checkbox.offset,
+        checked: true,
+        expectedChecked: false,
+      },
+    });
+    expect(checkboxWrite.statusCode).toBe(200);
+    expect(await readFile(file, "utf8")).toContain(
+      "- [x] Verify the sensor example.",
+    );
+
+    const reworded = seeded.replace(
+      "Predict the output for reading 0 before running the function.",
+      "Predict the result for reading 0 before running the function.",
+    );
+    await writeFile(file, reworded);
+    await writable.work.refresh();
+    const afterRewrite = (
+      await writable.app.inject({ url: "/api/practice/python", headers })
+    ).json();
+    const carried = afterRewrite.exercises.find((item: { text: string }) =>
+      item.text.startsWith("Predict the result"),
+    );
+    expect(carried.done).toBe(true);
+    expect(afterRewrite.orphans).toHaveLength(0);
+
+    await writeFile(
+      file,
+      reworded.replace(
+        "Predict the result for reading 0 before running the function.\n",
+        "",
+      ),
+    );
+    await writable.work.refresh();
+    const afterRemoval = (
+      await writable.app.inject({ url: "/api/practice/python", headers })
+    ).json();
+    expect(afterRemoval.orphans[0].text_snapshot).toContain(
+      "Predict the result",
+    );
+  } finally {
+    await writeFile(file, original);
+    await writable.work.refresh();
+    await writable.app.close();
+  }
+});
+
 it("previews course migration read-only and applies and reverts the selected file in an isolated vault", async () => {
   const url = "/api/vault-health/proposals?kind=python-course-migration";
   const payloadFor = (item: {

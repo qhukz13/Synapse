@@ -1025,6 +1025,40 @@ summary small {
   gap: 0.5rem;
   margin-top: 0.8rem;
 }
+.practice-list {
+  display: grid;
+  gap: 0.7rem;
+  margin: 0.8rem 0;
+  padding-left: 1.6rem;
+}
+.practice-list li > label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  line-height: 1.5;
+}
+.practice-list input[type="checkbox"] {
+  flex: none;
+  margin: 0.25rem 0 0;
+  accent-color: var(--accent);
+}
+.practice-list small {
+  display: block;
+  margin: 0.2rem 0 0 1.5rem;
+  color: var(--fg-3);
+}
+.exercise-orphans {
+  margin-top: 1rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--border-1);
+}
+.exercise-orphans li {
+  margin: 0.55rem 0;
+}
+.exercise-orphans li small {
+  display: block;
+  color: var(--fg-3);
+}
 .activity-list li {
   display: grid;
   grid-template-columns: 10px minmax(0, 1fr);
