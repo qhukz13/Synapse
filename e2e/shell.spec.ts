@@ -37,16 +37,22 @@ test("creates, autosaves and searches a scoped personal note", async ({
   ).toHaveValue(new RegExp(pagehideSentence));
   await reopened.getByRole("link", { name: "Vectors" }).click();
   await reopened.getByText(/^Personal notes \(\d+\)$/).click();
-  await expect(
-    reopened.getByRole("link", { name: new RegExp(title) }),
-  ).toBeVisible();
+  const associatedNote = reopened.getByRole("link", {
+    name: new RegExp(title),
+  });
+  await expect(associatedNote).toBeVisible();
+  await expect(associatedNote.locator(".personal-note-snippet")).toContainText(
+    sentence,
+  );
   await reopened.goto("/notes");
   await reopened
     .getByRole("searchbox", { name: "Search personal notes" })
     .fill(token);
-  await expect(
-    reopened.getByRole("link", { name: new RegExp(title) }),
-  ).toBeVisible();
+  const searchedNote = reopened.getByRole("link", { name: new RegExp(title) });
+  await expect(searchedNote).toBeVisible();
+  await expect(searchedNote.locator(".personal-note-snippet")).toContainText(
+    sentence,
+  );
 });
 
 test("persists app-only exercise ticks across reloads", async ({ page }) => {

@@ -475,6 +475,16 @@ it("creates and saves personal notes through guarded Markdown writes", async () 
     ).toBe(409);
     const saved = await readFile(join(root, "vault", result.path), "utf8");
     expect(saved).toContain(privateSentence);
+    expect(
+      (
+        await writable.app.inject({
+          url: `/api/personal-notes?q=${encodeURIComponent(privateSentence)}`,
+          headers,
+        })
+      )
+        .json()
+        .find((item: { slug: string }) => item.slug === result.slug).snippet,
+    ).toContain(privateSentence);
     const dbBytes = await readFile(join(root, "notes-state", "state.db"));
     expect(dbBytes.includes(Buffer.from(privateSentence))).toBe(false);
   } finally {

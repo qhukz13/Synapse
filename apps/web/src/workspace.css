@@ -1036,6 +1036,25 @@ summary small {
 .personal-note-list small {
   color: var(--fg-3);
 }
+.personal-note-list .personal-note-snippet {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--fg-2);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.rows .personal-note-snippet {
+  display: block;
+  max-width: 48rem;
+  margin-top: 0.25rem;
+  overflow: hidden;
+  color: var(--fg-2);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+}
 .personal-note-editor-label {
   display: block;
   margin: 1.5rem 0 0.45rem;

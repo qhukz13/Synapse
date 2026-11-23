@@ -2148,6 +2148,9 @@ function Reader() {
                 <li key={personalNote.slug}>
                   <Link to="/notes/$slug" params={{ slug: personalNote.slug }}>
                     {personalNote.title}
+                    <small className="personal-note-snippet">
+                      {personalNote.snippet}
+                    </small>
                     <small>{personalNote.path}</small>
                   </Link>
                 </li>
@@ -2233,6 +2236,7 @@ type PersonalNoteRow = {
   slug: string;
   title: string;
   path: string;
+  snippet: string;
   scope: string;
   domain: string;
   stage: number;
@@ -2403,6 +2407,9 @@ function PersonalNotesPage() {
                 <FileText size={16} />
                 <span>
                   {note.title}
+                  <small className="personal-note-snippet">
+                    {note.snippet}
+                  </small>
                   <small>
                     {note.scope} · {note.domain || note.path}
                   </small>

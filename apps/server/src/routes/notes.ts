@@ -70,17 +70,29 @@ export function registerNotes(ctx: Context, writer: WriteCoordinator) {
         );
       })
       .sort((a, b) => b.mtimeMs - a.mtimeMs || a.title.localeCompare(b.title))
-      .map((note) => ({
-        slug: note.slug,
-        title: note.title,
-        path: note.path,
-        scope: String(note.fm.meta.scope ?? "legacy"),
-        domain: note.domain,
-        stage: note.stage,
-        about: note.about,
-        hash: note.hash,
-        mtimeMs: note.mtimeMs,
-      }));
+      .map((note) => {
+        const file = work.scan.files.find((entry) => entry.path === note.path);
+        const snippet = file?.text
+          .slice(note.fm.bodyStart)
+          .split(/\r?\n/)
+          .find((line) => line.trim() && !/^\s{0,3}#{1,6}\s/.test(line))
+          ?.trim()
+          .replace(/^[-*+]\s+(?:\[[ xX]\]\s+)?/, "")
+          .replace(/\s+/g, " ")
+          .slice(0, 180);
+        return {
+          slug: note.slug,
+          title: note.title,
+          path: note.path,
+          scope: String(note.fm.meta.scope ?? "legacy"),
+          domain: note.domain,
+          stage: note.stage,
+          about: note.about,
+          snippet: snippet ?? "No note preview available.",
+          hash: note.hash,
+          mtimeMs: note.mtimeMs,
+        };
+      });
   });
   app.get<{ Params: { slug: string } }>(
     "/api/personal-notes/:slug",
