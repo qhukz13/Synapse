@@ -1,0 +1,36 @@
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+.local/
+data/
+backups/
+attachments/
+logs/
+*.db*
+*.sqlite*
+*.log
+*.bak
+*.tmp
+.env*
+synapse.config.json
+AI-ML-Vault/
+Personal Notes/
+.stfolder/
+.stversions/
+*.sync-conflict-*
+.syncthing.*
+# Local planning material includes personal learning history and filesystem paths.
+/CODEX_HANDOFF.md
+/PRODUCT_SPEC.md
+/ARCHITECTURE.md
+/UI_UX_SPEC.md
+/IMPLEMENTATION_PLAN.md
+/DECISIONS.md
+/DISCOVERY_REPORT.md
+/discovery-scripts/
+# Portable parser edge cases are synthetic.
+!packages/core/test/fixtures/edge-cases/Personal Notes/
+!packages/core/test/fixtures/edge-cases/**/*.sync-conflict-*.md

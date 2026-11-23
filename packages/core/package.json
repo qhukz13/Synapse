@@ -1,0 +1,19 @@
+{
+  "name": "@synapse/core",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "yaml": "^2",
+    "zod": "^4",
+    "unified": "^11",
+    "remark-parse": "^11",
+    "remark-gfm": "^4",
+    "remark-math": "^6",
+    "unist-util-visit": "^5",
+    "mdast-util-to-string": "^4",
+    "transliteration": "^2",
+    "@noble/hashes": "^1.8",
+    "@js-temporal/polyfill": "^0.5"
+  },
+  "exports": "./src/index.ts"
+}

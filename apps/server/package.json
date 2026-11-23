@@ -1,0 +1,16 @@
+{
+  "name": "@synapse/server",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@synapse/core": "workspace:*",
+    "fastify": "^5",
+    "@fastify/static": "^8",
+    "@fastify/multipart": "^9",
+    "fastify-type-provider-zod": "^6",
+    "chokidar": "^4",
+    "drizzle-orm": "^0.45",
+    "ulid": "^3",
+    "zod": "^4"
+  }
+}
