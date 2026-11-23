@@ -1,6 +1,13 @@
 import { z } from "zod";
+import { basename, dirname, posix } from "node:path";
 import type { Context } from "../app";
 import { WriteCoordinator, WriteError } from "../vault/writes";
+import {
+  addFrontmatter,
+  setFrontmatterList,
+  setFrontmatterScalar,
+} from "../../../../packages/core/src/patch";
+import { frontmatter } from "../../../../packages/core/src/parse/frontmatter";
 
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
 const titleInput = z
@@ -92,6 +99,11 @@ export function registerNotes(ctx: Context, writer: WriteCoordinator) {
         about: note.about,
         hash: note.hash,
         text: file.text,
+        inbound: work.index.nodes
+          .filter((source) =>
+            source.links.some((link) => link.slug === note.slug),
+          )
+          .map((source) => ({ slug: source.slug, title: source.title })),
       };
     },
   );
@@ -175,6 +187,218 @@ export function registerNotes(ctx: Context, writer: WriteCoordinator) {
         path: note.path,
         baseHash: body.baseHash,
         op: { type: "replaceFile", text: body.text },
+      });
+    },
+  );
+
+  app.post<{ Params: { slug: string } }>(
+    "/api/personal-notes/:slug/append",
+    async (request) => {
+      const note = topic(request.params.slug);
+      if (note.kind !== "note")
+        throw new WriteError(404, "NOT_FOUND", "Personal note not found.");
+      const { baseHash, text } = z
+        .object({ baseHash: hash, text: z.string().trim().min(1).max(100_000) })
+        .strict()
+        .parse(request.body);
+      const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const stamp = new Intl.DateTimeFormat("sv-SE", {
+        timeZone: zone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+      }).format(new Date());
+      const entry = `\n\n### ${stamp}\n\n${text.trim()}\n`;
+      return writer.write({
+        trigger: "note",
+        path: note.path,
+        baseHash,
+        op: { type: "appendText", text: entry },
+      });
+    },
+  );
+
+  app.post<{ Params: { slug: string } }>(
+    "/api/personal-notes/:slug/rename",
+    async (request) => {
+      const note = topic(request.params.slug);
+      if (note.kind !== "note")
+        throw new WriteError(404, "NOT_FOUND", "Personal note not found.");
+      if (!note.path.startsWith(config.personalNotes.root + "/"))
+        throw new WriteError(
+          403,
+          "NOT_ALLOWED",
+          "Move this legacy note into Personal Notes before renaming it.",
+        );
+      const body = z
+        .object({
+          baseHash: hash,
+          title: titleInput,
+          confirmInbound: z.boolean(),
+        })
+        .strict()
+        .parse(request.body);
+      const inbound = work.index.nodes
+        .filter((source) =>
+          source.links.some((link) => link.slug === note.slug),
+        )
+        .map((source) => ({ slug: source.slug, title: source.title }));
+      if (inbound.length && !body.confirmInbound)
+        throw new WriteError(
+          409,
+          "INBOUND_LINKS",
+          "Renaming may break links from other notes. Confirm after reviewing them.",
+          { inbound },
+        );
+      const title = body.title.replace(/\.md$/i, "").trim();
+      const destination = posix.join(dirname(note.path), title + ".md");
+      const file = work.scan.files.find((entry) => entry.path === note.path);
+      if (!file)
+        throw new WriteError(404, "NOT_FOUND", "Personal note unavailable.");
+      const result = await writer.write({
+        trigger: "note",
+        path: note.path,
+        baseHash: body.baseHash,
+        op: { type: "moveFile", to: destination },
+      });
+      return {
+        ...result,
+        slug:
+          work.index.nodes.find((item) => item.path === destination)?.slug ??
+          null,
+        inbound,
+      };
+    },
+  );
+
+  app.post<{ Params: { slug: string } }>(
+    "/api/personal-notes/:slug/move",
+    async (request) => {
+      const note = topic(request.params.slug);
+      if (note.kind !== "note")
+        throw new WriteError(404, "NOT_FOUND", "Personal note not found.");
+      const body = z
+        .object({
+          baseHash: hash,
+          scope: z.enum(["general", "topic", "project"]),
+          aboutSlug: z.string().optional(),
+        })
+        .strict()
+        .parse(request.body);
+      let folder: string;
+      let aboutTitle: string | null = null;
+      if (body.scope === "general") {
+        if (body.aboutSlug)
+          throw new WriteError(
+            422,
+            "VALIDATION",
+            "General notes have no owner.",
+          );
+        folder = `${config.personalNotes.root}/General`;
+      } else {
+        if (!body.aboutSlug)
+          throw new WriteError(422, "VALIDATION", "Choose a topic or project.");
+        const owner = topic(body.aboutSlug);
+        const isProject = ["project", "course-project"].includes(owner.kind);
+        if ((body.scope === "project") !== isProject)
+          throw new WriteError(
+            422,
+            "VALIDATION",
+            "The owner does not match this scope.",
+          );
+        aboutTitle = owner.title;
+        folder = `${config.personalNotes.root}/${body.scope === "project" ? "Projects" : "Topics"}/${segment(owner.title)}`;
+      }
+      const file = work.scan.files.find((entry) => entry.path === note.path);
+      if (!file)
+        throw new WriteError(404, "NOT_FOUND", "Personal note unavailable.");
+      let updated = file.text;
+      try {
+        const fm = frontmatter(updated);
+        const associations = aboutTitle ? [`[[${aboutTitle}]]`] : [];
+        if (!fm.present) {
+          updated = addFrontmatter(updated, {
+            type: "note",
+            scope: body.scope,
+            ...(associations.length ? { about: associations } : {}),
+          });
+        } else {
+          updated = setFrontmatterScalar(updated, "scope", body.scope);
+          updated = setFrontmatterList(updated, "about", associations);
+        }
+      } catch (cause) {
+        throw new WriteError(
+          422,
+          "UNSUPPORTED_FRONTMATTER",
+          cause instanceof Error
+            ? cause.message
+            : "This note's frontmatter cannot be updated safely.",
+        );
+      }
+      const metadata = await writer.write({
+        trigger: "note",
+        path: note.path,
+        baseHash: body.baseHash,
+        op: { type: "replaceFile", text: updated },
+      });
+      const destination = posix.join(folder, basename(note.path));
+      try {
+        const moved = await writer.write({
+          trigger: "note",
+          path: note.path,
+          baseHash: metadata.hash,
+          op: { type: "moveFile", to: destination },
+        });
+        return {
+          ...moved,
+          slug:
+            work.index.nodes.find((item) => item.path === destination)?.slug ??
+            null,
+        };
+      } catch (cause) {
+        try {
+          await writer.write({
+            trigger: "note",
+            path: note.path,
+            baseHash: metadata.hash,
+            op: { type: "replaceFile", text: file.text },
+          });
+        } catch {
+          throw new WriteError(
+            409,
+            "MOVE_RECOVERY_REQUIRED",
+            "The note metadata was updated, but the move failed and an external change prevents automatic rollback. Review the note before continuing.",
+            { path: note.path, destination },
+          );
+        }
+        if (cause instanceof WriteError) throw cause;
+        throw new WriteError(
+          500,
+          "MOVE_FAILED",
+          "The note could not be moved.",
+        );
+      }
+    },
+  );
+
+  app.post<{ Params: { slug: string } }>(
+    "/api/personal-notes/:slug/trash",
+    async (request) => {
+      const note = topic(request.params.slug);
+      if (note.kind !== "note")
+        throw new WriteError(404, "NOT_FOUND", "Personal note not found.");
+      const { baseHash } = z
+        .object({ baseHash: hash })
+        .strict()
+        .parse(request.body);
+      return writer.write({
+        trigger: "note",
+        path: note.path,
+        baseHash,
+        op: { type: "trash" },
       });
     },
   );

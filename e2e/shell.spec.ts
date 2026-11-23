@@ -68,6 +68,65 @@ test("persists app-only exercise ticks across reloads", async ({ page }) => {
   await expect(reloaded).toBeChecked({ checked: initial });
 });
 
+test("quick-captures, moves, renames and trashes a personal note", async ({
+  page,
+}, testInfo) => {
+  const token = `note-lifecycle-${Date.now()}-${testInfo.project.name}`;
+  await page.goto("/notes");
+  await page.getByRole("button", { name: "New note" }).click();
+  await page.getByLabel("Title").fill(token);
+  await page
+    .getByRole("combobox", { name: "Scope", exact: true })
+    .selectOption("general");
+  await page.getByRole("button", { name: "Create note" }).click();
+  await expect(page.getByRole("heading", { name: token })).toBeVisible();
+
+  await page.getByText("Quick capture", { exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "Quick capture text" })
+    .fill(`Capture content for ${token}.`);
+  await page.getByRole("button", { name: "Append capture" }).click();
+  const editor = page.getByRole("textbox", { name: "Markdown note" });
+  await expect(editor).toContainText(`Capture content for ${token}.`);
+
+  await page.getByText("Move note", { exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Move note scope" })
+    .selectOption("topic");
+  await page
+    .getByRole("combobox", { name: "Move note owner" })
+    .selectOption("vectors");
+  await expect(
+    page.getByText(new RegExp(`Personal Notes/Topics/Vectors/${token}\\.md`)),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Confirm move" }).click();
+  await expect(page.getByRole("heading", { name: token })).toBeVisible();
+  await expect(page.locator(".crumb")).toContainText(
+    "Personal Notes/Topics/Vectors",
+  );
+
+  await page.getByText("Rename note", { exact: true }).first().click();
+  const renameInput = page.getByRole("textbox", { name: "New note title" });
+  await renameInput.fill(`${token} renamed`);
+  await expect(renameInput).toHaveValue(`${token} renamed`);
+  const renameButton = page.getByRole("button", { name: "Rename note" });
+  await expect(renameButton).toBeEnabled();
+  await renameButton.click();
+  await expect(
+    page.getByRole("heading", { name: `${token} renamed` }),
+  ).toBeVisible();
+  await expect(editor).toContainText(`Capture content for ${token}.`);
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Move to vault trash" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Personal notes" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: new RegExp(`${token} renamed`) }),
+  ).toHaveCount(0);
+});
+
 test("shows real dashboard recommendations and persists resource completion", async ({
   page,
 }) => {

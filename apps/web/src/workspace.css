@@ -930,6 +930,58 @@ summary small {
 .personal-note-heading p {
   color: var(--fg-3);
 }
+.note-management-actions {
+  display: grid;
+  gap: 0.55rem;
+  margin: 1rem 0 1.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border-1);
+  border-radius: 9px;
+  background: var(--bg-1);
+}
+.note-management-actions details {
+  min-width: 0;
+  border-bottom: 1px solid var(--border-1);
+}
+.note-management-actions summary {
+  padding: 0.45rem 0.2rem;
+  color: var(--fg-2);
+  cursor: pointer;
+}
+.note-management-actions form {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.45rem 0.2rem 0.8rem;
+}
+.note-management-actions label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--fg-2);
+  font-size: 0.82rem;
+}
+.note-management-actions small,
+.note-management-actions p {
+  margin: 0;
+  color: var(--fg-3);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+.note-management-actions [role="alert"] {
+  color: var(--danger);
+}
+.note-management-actions .inbound-link-warning {
+  padding: 0.7rem;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--warning) 7%, var(--bg-1));
+}
+.note-management-actions .inbound-link-warning label {
+  display: flex;
+  align-items: flex-start;
+}
+.note-trash-button {
+  justify-self: start;
+  color: var(--danger);
+}
 .notes-filters {
   display: flex;
   gap: 0.6rem;

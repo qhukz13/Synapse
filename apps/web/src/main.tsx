@@ -2423,15 +2423,19 @@ function PersonalNotesPage() {
 function PersonalNotePage() {
   const { slug } = useParams({ from: "/notes/$slug" });
   const access = summary();
+  const navigate = useNavigate();
   const note = query<{
     slug: string;
     title: string;
     path: string;
+    scope: string;
     hash: string;
     text: string;
     about: string[];
+    inbound: { slug: string; title: string }[];
   }>(`personal-notes/${encodeURIComponent(slug)}`);
   const [draft, setDraft] = useState<string | null>(null);
+  const [loadedSlug, setLoadedSlug] = useState("");
   const [baseHash, setBaseHash] = useState("");
   const [lastSaved, setLastSaved] = useState("");
   const [state, setState] = useState("Saved");
@@ -2439,13 +2443,48 @@ function PersonalNotePage() {
     hash: string;
     theirs: string;
   } | null>(null);
+  const [appendText, setAppendText] = useState("");
+  const [showAppend, setShowAppend] = useState(false);
+  const [showMove, setShowMove] = useState(false);
+  const [moveScope, setMoveScope] = useState<"general" | "topic" | "project">(
+    "general",
+  );
+  const [moveOwner, setMoveOwner] = useState("");
+  const [renameTitle, setRenameTitle] = useState("");
+  const [confirmLinks, setConfirmLinks] = useState(false);
+  const [actionError, setActionError] = useState("");
+  const [actionBusy, setActionBusy] = useState(false);
+  const owners = (access.data?.topics ?? []).filter((item) =>
+    moveScope === "project"
+      ? ["project", "course-project"].includes(item.kind)
+      : !["project", "course-project", "note"].includes(item.kind),
+  );
+  const selectedMoveOwner = owners.find((item) => item.slug === moveOwner);
+  const rootPath = access.data?.personalNotesRoot ?? "Personal Notes";
+  const movePath =
+    moveScope === "general"
+      ? `${rootPath}/General/${note.data?.path.split("/").at(-1) ?? "<note>.md"}`
+      : `${rootPath}/${moveScope === "project" ? "Projects" : "Topics"}/${(selectedMoveOwner?.title ?? "<item>").replace(/[\\/]/g, " - ")}/${note.data?.path.split("/").at(-1) ?? "<note>.md"}`;
+  const renamePath = note.data
+    ? `${note.data.path.slice(0, note.data.path.lastIndexOf("/") + 1)}${renameTitle.trim() || "<title>"}.md`
+    : "";
+  const canManage =
+    access.data?.writeEnabled === true &&
+    draft !== null &&
+    draft === lastSaved &&
+    !conflict &&
+    (state === "Saved" || state === "Loaded external version");
   useEffect(() => {
-    if (note.data && draft === null) {
+    if (note.data && note.data.slug !== loadedSlug) {
       setDraft(note.data.text);
       setBaseHash(note.data.hash);
       setLastSaved(note.data.text);
+      setRenameTitle(note.data.title);
+      setLoadedSlug(note.data.slug);
+      setState("Saved");
+      setConflict(null);
     }
-  }, [note.data, draft]);
+  }, [note.data, loadedSlug]);
   const save = async (text: string, expectedHash = baseHash) => {
     setState("Saving…");
     const response = await fetch(
@@ -2504,6 +2543,160 @@ function PersonalNotePage() {
     window.addEventListener("pagehide", flush);
     return () => window.removeEventListener("pagehide", flush);
   }, [slug, draft, baseHash, lastSaved, conflict, access.data?.writeEnabled]);
+  const appendCapture = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!note.data || !appendText.trim()) return;
+    setActionBusy(true);
+    setActionError("");
+    try {
+      const response = await fetch(
+        `/api/personal-notes/${encodeURIComponent(slug)}/append`,
+        {
+          method: "POST",
+          headers: { "x-synapse": "1", "content-type": "application/json" },
+          body: JSON.stringify({ baseHash, text: appendText }),
+        },
+      );
+      const result = await response.json();
+      if (!response.ok)
+        throw Error(result.message ?? "Could not append capture.");
+      const current = await fetch(
+        `/api/personal-notes/${encodeURIComponent(slug)}`,
+      );
+      if (!current.ok)
+        throw Error("Capture was saved, but the note could not be reloaded.");
+      const saved = await current.json();
+      setDraft(saved.text);
+      setLastSaved(saved.text);
+      setBaseHash(saved.hash);
+      setState("Saved");
+      setAppendText("");
+      setShowAppend(false);
+      await client.invalidateQueries({ queryKey: ["personal-notes"] });
+    } catch (cause) {
+      setActionError(
+        cause instanceof Error ? cause.message : "Could not append capture.",
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  };
+  const moveNote = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!note.data) return;
+    setActionBusy(true);
+    setActionError("");
+    try {
+      const response = await fetch(
+        `/api/personal-notes/${encodeURIComponent(slug)}/move`,
+        {
+          method: "POST",
+          headers: { "x-synapse": "1", "content-type": "application/json" },
+          body: JSON.stringify({
+            baseHash,
+            scope: moveScope,
+            ...(moveScope === "general" ? {} : { aboutSlug: moveOwner }),
+          }),
+        },
+      );
+      const result = await response.json();
+      if (!response.ok) throw Error(result.message ?? "Could not move note.");
+      await client.invalidateQueries({ queryKey: ["personal-notes"] });
+      setShowMove(false);
+      if (result.slug) {
+        const detailResponse = await fetch(
+          `/api/personal-notes/${encodeURIComponent(result.slug)}`,
+        );
+        if (!detailResponse.ok)
+          throw Error("Moved note could not be reloaded.");
+        const saved = await detailResponse.json();
+        client.setQueryData(
+          ["personal-notes/" + encodeURIComponent(result.slug)],
+          saved,
+        );
+        setDraft(saved.text);
+        setLastSaved(saved.text);
+        setBaseHash(saved.hash);
+        setRenameTitle(saved.title);
+        setLoadedSlug(saved.slug);
+        await navigate({ to: "/notes/$slug", params: { slug: result.slug } });
+      } else await navigate({ to: "/notes" });
+    } catch (cause) {
+      setActionError(
+        cause instanceof Error ? cause.message : "Could not move note.",
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  };
+  const renameNote = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!note.data) return;
+    setActionBusy(true);
+    setActionError("");
+    try {
+      const response = await fetch(
+        `/api/personal-notes/${encodeURIComponent(slug)}/rename`,
+        {
+          method: "POST",
+          headers: { "x-synapse": "1", "content-type": "application/json" },
+          body: JSON.stringify({
+            baseHash,
+            title: renameTitle,
+            confirmInbound: confirmLinks,
+          }),
+        },
+      );
+      const result = await response.json();
+      if (!response.ok) throw Error(result.message ?? "Could not rename note.");
+      await client.invalidateQueries({ queryKey: ["personal-notes"] });
+      setRenameTitle("");
+      setConfirmLinks(false);
+      if (result.slug)
+        await navigate({ to: "/notes/$slug", params: { slug: result.slug } });
+      else await navigate({ to: "/notes" });
+    } catch (cause) {
+      setActionError(
+        cause instanceof Error ? cause.message : "Could not rename note.",
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  };
+  const trashNote = async () => {
+    if (
+      !note.data ||
+      !window.confirm(
+        `Move “${note.data.path}” to the vault's .trash folder? It will not be permanently deleted.`,
+      )
+    )
+      return;
+    setActionBusy(true);
+    setActionError("");
+    try {
+      const response = await fetch(
+        `/api/personal-notes/${encodeURIComponent(slug)}/trash`,
+        {
+          method: "POST",
+          headers: { "x-synapse": "1", "content-type": "application/json" },
+          body: JSON.stringify({ baseHash }),
+        },
+      );
+      const result = await response.json();
+      if (!response.ok)
+        throw Error(result.message ?? "Could not move note to trash.");
+      await client.invalidateQueries({ queryKey: ["personal-notes"] });
+      await navigate({ to: "/notes" });
+    } catch (cause) {
+      setActionError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not move note to trash.",
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  };
   if (!note.data || draft === null)
     return <p role="status">{note.error?.message ?? "Opening note…"}</p>;
   return (
@@ -2533,6 +2726,159 @@ function PersonalNotePage() {
           {access.data?.writeEnabled ? state : "Read-only"}
         </small>
       </header>
+      {access.data?.writeEnabled && (
+        <section className="note-management-actions" aria-label="Note actions">
+          <details
+            open={showAppend}
+            onToggle={(event) => setShowAppend(event.currentTarget.open)}
+          >
+            <summary>Quick capture</summary>
+            <form onSubmit={(event) => void appendCapture(event)}>
+              <label>
+                Add a dated capture
+                <textarea
+                  aria-label="Quick capture text"
+                  value={appendText}
+                  onChange={(event) => setAppendText(event.target.value)}
+                  rows={3}
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={!canManage || actionBusy || !appendText.trim()}
+              >
+                {actionBusy ? "Saving…" : "Append capture"}
+              </button>
+            </form>
+          </details>
+          <details
+            open={showMove}
+            onToggle={(event) => setShowMove(event.currentTarget.open)}
+          >
+            <summary>Move note</summary>
+            <form onSubmit={(event) => void moveNote(event)}>
+              <p>Current location: {note.data.path}</p>
+              <label>
+                Scope
+                <select
+                  aria-label="Move note scope"
+                  value={moveScope}
+                  onChange={(event) => {
+                    setMoveScope(event.target.value as typeof moveScope);
+                    setMoveOwner("");
+                  }}
+                >
+                  <option value="general">General</option>
+                  <option value="topic">Topic</option>
+                  <option value="project">Project</option>
+                </select>
+              </label>
+              {moveScope !== "general" && (
+                <label>
+                  {moveScope === "project" ? "Project" : "Topic"}
+                  <select
+                    aria-label="Move note owner"
+                    value={moveOwner}
+                    required
+                    onChange={(event) => setMoveOwner(event.target.value)}
+                  >
+                    <option value="">Choose…</option>
+                    {owners.map((owner) => (
+                      <option key={owner.slug} value={owner.slug}>
+                        {owner.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <small>Destination preview: {movePath}</small>
+              <button
+                type="submit"
+                disabled={
+                  !canManage ||
+                  actionBusy ||
+                  (moveScope !== "general" && !moveOwner) ||
+                  movePath === note.data.path
+                }
+              >
+                {actionBusy ? "Moving…" : "Confirm move"}
+              </button>
+            </form>
+          </details>
+          <details>
+            <summary>Rename note</summary>
+            <form onSubmit={(event) => void renameNote(event)}>
+              <label>
+                New title
+                <input
+                  aria-label="New note title"
+                  value={renameTitle}
+                  maxLength={200}
+                  onChange={(event) => {
+                    setRenameTitle(event.target.value);
+                    setConfirmLinks(false);
+                  }}
+                />
+              </label>
+              <small>Destination preview: {renamePath}</small>
+              {!!note.data.inbound.length && (
+                <div className="inbound-link-warning">
+                  <p>
+                    These links may stop resolving after the rename. Synapse
+                    will not rewrite them automatically.
+                  </p>
+                  <ul>
+                    {note.data.inbound.map((source) => (
+                      <li key={source.slug}>
+                        <Link to="/t/$slug" params={{ slug: source.slug }}>
+                          {source.title}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={confirmLinks}
+                      onChange={(event) =>
+                        setConfirmLinks(event.target.checked)
+                      }
+                    />
+                    I reviewed these links and want to continue
+                  </label>
+                </div>
+              )}
+              <button
+                type="submit"
+                disabled={
+                  !canManage ||
+                  actionBusy ||
+                  !renameTitle.trim() ||
+                  renameTitle.trim() === note.data.title ||
+                  (!!note.data.inbound.length && !confirmLinks)
+                }
+              >
+                {actionBusy ? "Renaming…" : "Rename note"}
+              </button>
+            </form>
+          </details>
+          <button
+            type="button"
+            className="note-trash-button"
+            disabled={!canManage || actionBusy}
+            onClick={() => void trashNote()}
+          >
+            Move to vault trash
+          </button>
+          {actionError && <p role="alert">{actionError}</p>}
+          {!canManage && (
+            <small>
+              Save or resolve the current edit before changing this note’s
+              location.
+            </small>
+          )}
+        </section>
+      )}
       {conflict && (
         <section className="note-conflict" role="alert">
           <h2>This note changed outside Synapse</h2>

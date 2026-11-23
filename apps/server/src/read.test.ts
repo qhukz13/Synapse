@@ -4,6 +4,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import {
   mkdtemp,
   cp,
+  mkdir,
   rm,
   symlink,
   readFile,
@@ -476,6 +477,172 @@ it("creates and saves personal notes through guarded Markdown writes", async () 
     expect(saved).toContain(privateSentence);
     const dbBytes = await readFile(join(root, "notes-state", "state.db"));
     expect(dbBytes.includes(Buffer.from(privateSentence))).toBe(false);
+  } finally {
+    await writable.app.close();
+  }
+});
+
+it("appends, renames with link review, moves scopes and trashes personal notes", async () => {
+  const vault = join(root, "note-lifecycle-vault");
+  await cp(join(projectDir, "packages/core/test/fixtures/vault"), vault, {
+    recursive: true,
+  });
+  const writable = await createApp(
+    configFrom({
+      vaultPath: vault,
+      dataDir: join(root, "note-lifecycle-state"),
+      allowVaultWrites: true,
+    }),
+  );
+  const mutation = {
+    ...headers,
+    origin: "http://127.0.0.1:4317",
+    "x-synapse": "1",
+    "content-type": "application/json",
+  };
+  try {
+    const created = await writable.app.inject({
+      method: "POST",
+      url: "/api/personal-notes",
+      headers: mutation,
+      payload: { title: "Lifecycle scratchpad", scope: "general" },
+    });
+    expect(created.statusCode).toBe(200);
+    const initial = created.json();
+    const capture = await writable.app.inject({
+      method: "POST",
+      url: `/api/personal-notes/${initial.slug}/append`,
+      headers: mutation,
+      payload: {
+        baseHash: initial.hash,
+        text: "A dated quick capture stays in the Markdown note.",
+      },
+    });
+    expect(capture.statusCode).toBe(200);
+    let detail = (
+      await writable.app.inject({
+        url: `/api/personal-notes/${initial.slug}`,
+        headers,
+      })
+    ).json();
+    expect(detail.text).toMatch(/### \d{4}-\d{2}-\d{2} \d{2}:\d{2}/);
+    expect(detail.text).toContain(
+      "A dated quick capture stays in the Markdown note.",
+    );
+
+    const pythonPath = join(vault, "01 - Foundations/Python.md");
+    const pythonText = await readFile(pythonPath, "utf8");
+    await writeFile(
+      pythonPath,
+      `${pythonText}\nSee [[Lifecycle scratchpad]].\n`,
+    );
+    await writable.work.refresh();
+    const blockedRename = await writable.app.inject({
+      method: "POST",
+      url: `/api/personal-notes/${initial.slug}/rename`,
+      headers: mutation,
+      payload: {
+        baseHash: detail.hash,
+        title: "Lifecycle archive",
+        confirmInbound: false,
+      },
+    });
+    expect(blockedRename.statusCode).toBe(409);
+    expect(blockedRename.json()).toMatchObject({
+      code: "INBOUND_LINKS",
+      details: { inbound: [expect.objectContaining({ title: "Python" })] },
+    });
+    const renamed = await writable.app.inject({
+      method: "POST",
+      url: `/api/personal-notes/${initial.slug}/rename`,
+      headers: mutation,
+      payload: {
+        baseHash: detail.hash,
+        title: "Lifecycle archive",
+        confirmInbound: true,
+      },
+    });
+    expect(renamed.statusCode).toBe(200);
+    expect(renamed.json().path).toBe(
+      "Personal Notes/General/Lifecycle archive.md",
+    );
+    expect(await readFile(pythonPath, "utf8")).toContain(
+      "[[Lifecycle scratchpad]]",
+    );
+
+    detail = (
+      await writable.app.inject({
+        url: `/api/personal-notes/${renamed.json().slug}`,
+        headers,
+      })
+    ).json();
+    const collisionPath = join(
+      vault,
+      "Personal Notes/Topics/Vectors/Lifecycle archive.md",
+    );
+    await mkdir(join(vault, "Personal Notes/Topics/Vectors"), {
+      recursive: true,
+    });
+    await writeFile(collisionPath, "# Existing note\n");
+    const refusedMove = await writable.app.inject({
+      method: "POST",
+      url: `/api/personal-notes/${detail.slug}/move`,
+      headers: mutation,
+      payload: {
+        baseHash: detail.hash,
+        scope: "topic",
+        aboutSlug: "vectors",
+      },
+    });
+    expect(refusedMove.statusCode).toBe(409);
+    expect(refusedMove.json().code).toBe("NAME_COLLISION");
+    detail = (
+      await writable.app.inject({
+        url: `/api/personal-notes/${detail.slug}`,
+        headers,
+      })
+    ).json();
+    expect(detail.scope).toBe("general");
+    expect(detail.text).not.toContain("scope: topic");
+    await rm(collisionPath);
+    const moved = await writable.app.inject({
+      method: "POST",
+      url: `/api/personal-notes/${detail.slug}/move`,
+      headers: mutation,
+      payload: {
+        baseHash: detail.hash,
+        scope: "topic",
+        aboutSlug: "vectors",
+      },
+    });
+    expect(moved.statusCode).toBe(200);
+    expect(moved.json().path).toBe(
+      "Personal Notes/Topics/Vectors/Lifecycle archive.md",
+    );
+    detail = (
+      await writable.app.inject({
+        url: `/api/personal-notes/${moved.json().slug}`,
+        headers,
+      })
+    ).json();
+    expect(detail.scope).toBe("topic");
+    expect(detail.text).toContain("scope: topic");
+    expect(detail.text).toContain('"[[Vectors]]"');
+
+    const trashed = await writable.app.inject({
+      method: "POST",
+      url: `/api/personal-notes/${detail.slug}/trash`,
+      headers: mutation,
+      payload: { baseHash: detail.hash },
+    });
+    expect(trashed.statusCode).toBe(200);
+    expect(trashed.json().path).toMatch(/^\.trash\//);
+    await expect(readFile(join(vault, detail.path))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(
+      (await readFile(join(vault, trashed.json().path))).toString("utf8"),
+    ).toContain("A dated quick capture stays in the Markdown note.");
   } finally {
     await writable.app.close();
   }
