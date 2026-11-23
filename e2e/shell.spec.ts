@@ -1,4 +1,38 @@
 import { test, expect } from "@playwright/test";
+test("starts, pauses, resumes and persists a study timer", async ({ page }) => {
+  await page.goto("/");
+  const timer = page.getByRole("contentinfo", { name: "Study timer" });
+  await timer.getByRole("button", { name: "Start session" }).click();
+  await expect(timer.getByRole("button", { name: "Pause" })).toBeVisible();
+  await expect(timer.locator("output")).toBeVisible();
+  await timer.getByRole("button", { name: "Pause" }).click();
+  await expect(timer.getByRole("button", { name: "Resume" })).toBeVisible();
+  await timer.getByRole("button", { name: "Resume" }).click();
+  await expect(timer.getByRole("button", { name: "Finish" })).toBeVisible();
+  await page.reload();
+  await expect(
+    page
+      .getByRole("contentinfo", { name: "Study timer" })
+      .getByRole("button", { name: "Finish" }),
+  ).toBeVisible();
+  await page
+    .getByRole("contentinfo", { name: "Study timer" })
+    .getByRole("button", { name: "Finish" })
+    .click();
+  await expect(
+    page
+      .getByRole("contentinfo", { name: "Study timer" })
+      .getByRole("button", { name: "Start session" }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: /Study sessions/ }).click();
+  await expect(
+    page.getByRole("heading", { name: "Study sessions" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Recent sessions" }),
+  ).toBeVisible();
+});
+
 test("uses vault search, reads a note and follows a prerequisite", async ({
   page,
 }) => {

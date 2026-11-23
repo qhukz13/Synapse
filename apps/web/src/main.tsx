@@ -16,8 +16,15 @@ import {
   QueryClientProvider,
   useQuery,
 } from "@tanstack/react-query";
-import { lazy, Suspense, useEffect, useState } from "react";
-import { BookOpen, Compass, Files, Search, ShieldCheck } from "lucide-react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import {
+  BookOpen,
+  Compass,
+  Files,
+  Search,
+  ShieldCheck,
+  Clock3,
+} from "lucide-react";
 import type { Catalogue, TopicRow } from "@synapse/core/view";
 import type { Issue, Topic } from "@synapse/core";
 import { SynapseMark } from "./design/SynapseMark";
@@ -27,10 +34,11 @@ import "./workspace.css";
 const MarkdownView = lazy(() => import("./markdown/MarkdownView"));
 const Editor = lazy(() => import("./Editor"));
 const client = new QueryClient();
-function query<T>(url: string, enabled = true) {
+function query<T>(url: string, enabled = true, refetchInterval?: number) {
   return useQuery({
     queryKey: [url],
     enabled,
+    ...(refetchInterval ? { refetchInterval } : {}),
     queryFn: async ({ signal }) => {
       const res = await fetch("/api/" + url, { signal });
       if (!res.ok)
@@ -91,6 +99,9 @@ function Layout() {
           <Files />
           Library
         </Link>
+        <Link to="/sessions">
+          <Clock3 /> Study sessions
+        </Link>
         <Link to="/health">
           <ShieldCheck />
           Vault Health
@@ -99,7 +110,162 @@ function Layout() {
       <main id="workspace">
         <Outlet />
       </main>
+      <StudyTimer />
     </div>
+  );
+}
+
+type ActiveSession = {
+  id: string;
+  state: "running" | "paused";
+  started_at: number;
+  segments: {
+    id: number;
+    started_at: number;
+    ended_at: number | null;
+    close_reason: string | null;
+  }[];
+  segment?: {
+    id: number;
+    started_at: number;
+    ended_at: number | null;
+    close_reason: string | null;
+  } | null;
+} | null;
+function StudyTimer() {
+  const session = query<ActiveSession>("sessions/current", true, 5000),
+    stats = query<{
+      todayMs: number;
+      streak: { current: number; longest: number };
+    }>("stats/study", true, 30_000);
+  const [now, setNow] = useState(Date.now());
+  const lastInput = useRef(Date.now());
+  const active = session.data;
+  useEffect(() => {
+    const input = () => {
+      lastInput.current = Date.now();
+    };
+    for (const event of ["keydown", "pointerdown", "scroll"])
+      window.addEventListener(event, input, { passive: true });
+    document.addEventListener("playing", input, true);
+    document.addEventListener("timeupdate", input, true);
+    return () => {
+      for (const event of ["keydown", "pointerdown", "scroll"])
+        window.removeEventListener(event, input);
+      document.removeEventListener("playing", input, true);
+      document.removeEventListener("timeupdate", input, true);
+    };
+  }, []);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    if (!active || active.state !== "running") return;
+    const heartbeat = window.setInterval(() => {
+      void fetch(`/api/sessions/${active.id}/heartbeat`, {
+        method: "POST",
+        headers: { "x-synapse": "1", "content-type": "application/json" },
+        body: JSON.stringify({ lastInputAt: lastInput.current }),
+      }).then(() =>
+        client.invalidateQueries({ queryKey: ["sessions/current"] }),
+      );
+    }, 30_000);
+    return () => window.clearInterval(heartbeat);
+  }, [active?.id, active?.state]);
+  const act = async (action: "start" | "pause" | "resume" | "stop") => {
+    const response =
+      action === "start"
+        ? await fetch("/api/sessions", {
+            method: "POST",
+            headers: { "x-synapse": "1", "content-type": "application/json" },
+            body: "{}",
+          })
+        : await fetch(`/api/sessions/${active!.id}/${action}`, {
+            method: "POST",
+            headers: { "x-synapse": "1", "content-type": "application/json" },
+            body: "{}",
+          });
+    if (response.ok) {
+      await client.invalidateQueries();
+      lastInput.current = Date.now();
+    }
+  };
+  const elapsed =
+    active?.segments.reduce(
+      (sum, segment) =>
+        sum +
+        Math.max(
+          0,
+          (segment.ended_at ??
+            (active.state === "running" ? now : segment.started_at)) -
+            segment.started_at,
+        ),
+      0,
+    ) ?? 0;
+  const format = (ms: number) =>
+    `${Math.floor(ms / 3_600_000)
+      .toString()
+      .padStart(2, "0")}:${Math.floor((ms / 60_000) % 60)
+      .toString()
+      .padStart(2, "0")}:${Math.floor((ms / 1000) % 60)
+      .toString()
+      .padStart(2, "0")}`;
+  return (
+    <footer className="study-timer" aria-label="Study timer">
+      <span className="timer-label">
+        {active
+          ? active.state === "running"
+            ? "Studying"
+            : "Session paused"
+          : "Study session"}
+      </span>
+      {active?.state === "running" && (
+        <output aria-live="off">{format(elapsed)}</output>
+      )}
+      {stats.data && (
+        <small title="Qualifying study days require 10 minutes">
+          {stats.data.streak.current} day streak ·{" "}
+          {Math.floor(stats.data.todayMs / 60_000)}m today
+        </small>
+      )}
+      {!active && (
+        <button onClick={() => void act("start")}>Start session</button>
+      )}
+      {active?.state === "running" && (
+        <>
+          <button onClick={() => void act("pause")}>Pause</button>
+          <button onClick={() => void act("stop")}>Finish</button>
+        </>
+      )}
+      {active?.state === "paused" && (
+        <>
+          <button onClick={() => void act("resume")}>Resume</button>
+          <button onClick={() => void act("stop")}>Finish</button>
+        </>
+      )}
+      {active?.state === "paused" &&
+        active.segment?.close_reason === "idle" && (
+          <button
+            onClick={async () => {
+              await fetch(
+                `/api/sessions/${active.id}/restore-idle/${active.segment!.id}`,
+                {
+                  method: "POST",
+                  headers: {
+                    "x-synapse": "1",
+                    "content-type": "application/json",
+                  },
+                  body: "{}",
+                },
+              );
+              await client.invalidateQueries();
+            }}
+          >
+            Count idle time
+          </button>
+        )}
+    </footer>
   );
 }
 function Rows({ topics }: { topics: TopicRow[] }) {
@@ -115,6 +281,128 @@ function Rows({ topics }: { topics: TopicRow[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+function TopicSessionAction({ slug }: { slug: string }) {
+  const active = query<ActiveSession>("sessions/current");
+  if (active.data)
+    return (
+      <small>
+        {active.data.state === "running"
+          ? "A study session is active"
+          : "A study session is paused"}
+      </small>
+    );
+  return (
+    <button
+      onClick={async () => {
+        const response = await fetch("/api/sessions", {
+          method: "POST",
+          headers: { "x-synapse": "1", "content-type": "application/json" },
+          body: JSON.stringify({ topicSlug: slug }),
+        });
+        if (response.ok) await client.invalidateQueries();
+      }}
+    >
+      Study this topic
+    </button>
+  );
+}
+type SessionRecord = {
+  id: string;
+  state: string;
+  started_at: number;
+  ended_at: number | null;
+  topic_slug: string | null;
+  topic_title: string | null;
+  durationMs: number;
+  note: string | null;
+};
+function StudyHistory() {
+  const stats = query<{
+    today: string;
+    timeZone: string;
+    todayMs: number;
+    totalMs: number;
+    dailyMs: Record<string, number>;
+    streak: { current: number; longest: number };
+  }>("stats/study", true, 30_000);
+  const sessions = query<SessionRecord[]>("sessions");
+  const fmt = (value: number) =>
+    `${Math.floor(value / 3_600_000)}h ${Math.floor((value / 60_000) % 60)}m`;
+  return (
+    <>
+      <header>
+        <h1>Study sessions</h1>
+        <p>
+          Recorded focus time · day boundary{" "}
+          {stats.data?.timeZone ?? "local timezone"}
+        </p>
+      </header>
+      {stats.data && (
+        <section className="session-summary" aria-label="Study totals">
+          <div>
+            <small>Today</small>
+            <strong>{fmt(stats.data.todayMs)}</strong>
+          </div>
+          <div>
+            <small>Current streak</small>
+            <strong>{stats.data.streak.current} days</strong>
+          </div>
+          <div>
+            <small>Longest streak</small>
+            <strong>{stats.data.streak.longest} days</strong>
+          </div>
+          <div>
+            <small>All time</small>
+            <strong>{fmt(stats.data.totalMs)}</strong>
+          </div>
+        </section>
+      )}
+      <h2>Recent sessions</h2>
+      {sessions.error && <p role="alert">{sessions.error.message}</p>}
+      {sessions.data?.length === 0 && (
+        <p>
+          No study sessions recorded yet. Start a session from a topic or the
+          timer.
+        </p>
+      )}
+      <ol className="session-history">
+        {sessions.data?.map((item) => (
+          <li key={item.id}>
+            <span>
+              <strong>{item.topic_title ?? "General study"}</strong>
+              <small>{new Date(item.started_at).toLocaleString()}</small>
+            </span>
+            <span>
+              {fmt(item.durationMs)}
+              <small>{item.state}</small>
+            </span>
+          </li>
+        ))}
+      </ol>
+      {stats.data && (
+        <>
+          <h2>Days studied</h2>
+          <ul className="study-days">
+            {Object.entries(stats.data.dailyMs)
+              .sort(([a], [b]) => b.localeCompare(a))
+              .slice(0, 14)
+              .map(([day, ms]) => (
+                <li key={day}>
+                  <time dateTime={day}>{day}</time>
+                  <span>{fmt(ms)}</span>
+                  <small>
+                    {ms >= 10 * 60_000
+                      ? "Qualifies for streak"
+                      : "Below 10 min"}
+                  </small>
+                </li>
+              ))}
+          </ul>
+        </>
+      )}
+    </>
   );
 }
 function Curriculum() {
@@ -620,6 +908,7 @@ function Reader() {
       </div>
       <header>
         {!hasLeadingHeading && <h1>{n.heading || n.title}</h1>}
+        <TopicSessionAction slug={slug} />
         <p>
           {[
             n.domain,
@@ -1201,6 +1490,11 @@ const router = createRouter({
       getParentRoute: () => root,
       path: "/health",
       component: Health,
+    }),
+    createRoute({
+      getParentRoute: () => root,
+      path: "/sessions",
+      component: StudyHistory,
     }),
     createRoute({
       getParentRoute: () => root,

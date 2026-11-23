@@ -2,7 +2,7 @@
 
 ## Current milestone
 
-M6, Vault Health and migrations. Synapse is usable as a local vault reader. The complete F1–F24 release remains in development.
+M7, Sessions, progress and streaks. The timer and core session lifecycle are implemented; the wider F1–F24 release remains in development.
 
 ## Implemented
 
@@ -10,6 +10,7 @@ M6, Vault Health and migrations. Synapse is usable as a local vault reader. The 
 - M2 added the local API, watcher, replayable events, stable SQLite identities and contentless search. A socket integration test covers reconnect and replay. URL stability under new duplicate basenames still needs integration.
 - M3–M4 added the responsive reader, Markdown and KaTeX rendering, local search, folder/domain/Learning Path grouping, URL-filtered list, resources and practice displays, library links, and a read-only Vault Health view. The full shell, command palette and all-note browser rendering sweep are pending.
 - M5 added the audited write coordinator, opt-in CodeMirror source editor with preview, guarded status and checkbox actions, conflict comparison, backups, file history, and explicit restore. Draft persistence, automatic three-way merge, the full metadata form, mirror controls and conflict-copy resolution are pending.
+- M7 adds persistent sessions with server-side lifecycle controls, topic association, heartbeat loss and restart recovery, idle auto-pause and bounded restore, an active-time cap, audit history, timezone-aware totals and streaks, a global timer, and a session history view.
 
 ## Vault connection and Properties
 
@@ -22,6 +23,7 @@ The reader shows the active vault path and access mode. Each topic displays its 
 - The first 100-round stress run passed 1,700 checks. The expanded 21-case suite then passed 2,100 checks across 100 independent rounds.
 - Discovery and current PDF/URL totals differ as described in docs/ARCH-NOTES.md. The POSIX write fallback has the final check-to-rename limitation documented in DEVELOPMENT.md.
 - Production build passed. Vite warned that the lazy editor chunk exceeds its default size warning threshold.
+- M7 verification: 131 unit/integration tests pass; TypeScript, ESLint and production build pass. Twelve Chromium checks pass across desktop, medium and compact widths, including timer lifecycle, reload persistence and session history. Aggregation tests cover overlap union, midnight split, thresholds, Kyiv DST, streak continuity and future-end clamping. Service tests cover single-open enforcement, pause/resume totals, idle and heartbeat-loss closure, restore bounds, crash recovery and the 4-hour cap.
 
 ## Commits
 
@@ -29,7 +31,7 @@ The reader shows the active vault path and access mode. Each topic displays its 
 
 ## Remaining work
 
-Finish M5 acceptance including manual Obsidian concurrency and recovery verification. Continue with M6 repair and migration change sets, M7 timers and streaks, M8 personal notes and completion tracking, M9 attachment management and file viewers, M10 interactive graph and daily dashboard, M11 manual review and statistics, then M12–M13 full responsive, performance and accessibility acceptance.
+Finish M5 acceptance including manual Obsidian concurrency and recovery verification. M7 still needs leader election and cross-tab handover, segment correction controls, the end-of-session note sheet, streak progress indicator, activity and focus rollups, and wider progress acceptance. Continue with M8 personal notes and exercise completion, M9 attachment management and file viewers, M10 interactive graph and daily dashboard, M11 manual reviews and fuller analytics, then M12–M13 responsive, performance, accessibility and release acceptance.
 
 ## M6 repair and migration checkpoint
 
@@ -42,3 +44,9 @@ Post-apply validation compares the indexed file with the reviewed result and che
 Legacy note reorganization now proposes the destination while retaining the original filename. The real vault returns 18 read-only previews. Isolated tests verify byte-exact move and undo, journal reconciliation after restart, and stable SQLite identity.
 
 Course migration previews now let the user supply optional difficulty and importance. Changing either field clears that file’s approval until a fresh preview is generated. The selected values are labeled as user-entered and included in the hash that is checked on apply.
+
+## M7 timer and streak checkpoint
+
+Session totals derive from explicit active segments. The server monitors heartbeats, records lost-heartbeat time conservatively, auto-pauses idle intervals at the approved backdated point, and permits a one-time restore bounded by the auto-pause time. Restart closes running time at the last heartbeat. The four-hour cap applies to active time. Streak dates use the IANA zone captured in private SQLite state (or the explicitly configured zone); UTC segments are split at local midnight and unioned to avoid double-counting.
+
+The timer polls for another tab’s state. Multiple tabs may send heartbeats; server time remains authoritative. Leader election and handover are not implemented yet, so duplicate heartbeats are tolerated pending that part of M7.

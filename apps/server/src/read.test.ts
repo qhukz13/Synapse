@@ -60,6 +60,50 @@ it("serves from a root by validated file handle and refuses symlinks", async () 
     safeFile(join(root, "vault"), "outside/passwd"),
   ).rejects.toThrow();
 });
+it("persists topic-linked study sessions through the local API", async () => {
+  const writeHeaders = {
+    ...headers,
+    origin: "http://127.0.0.1:4317",
+    "x-synapse": "1",
+    "content-type": "application/json",
+  };
+  const started = await ctx.app.inject({
+    method: "POST",
+    url: "/api/sessions",
+    headers: writeHeaders,
+    payload: { topicSlug: "linear-regression" },
+  });
+  expect(started.statusCode).toBe(200);
+  const session = started.json();
+  expect(session.nid).toBe(ctx.nid("linear-regression"));
+  expect(
+    (await ctx.app.inject({ url: "/api/sessions/current", headers })).json().id,
+  ).toBe(session.id);
+  expect(
+    (await ctx.app.inject({ url: "/api/stats/study", headers })).json()
+      .timeZone,
+  ).toBeTruthy();
+  expect(
+    (
+      await ctx.app.inject({
+        method: "POST",
+        url: `/api/sessions/${session.id}/pause`,
+        headers: writeHeaders,
+        payload: {},
+      })
+    ).statusCode,
+  ).toBe(200);
+  expect(
+    (
+      await ctx.app.inject({
+        method: "POST",
+        url: `/api/sessions/${session.id}/stop`,
+        headers: writeHeaders,
+        payload: {},
+      })
+    ).statusCode,
+  ).toBe(200);
+});
 it("checks hosts and origins before handlers run", async () => {
   expect(
     (

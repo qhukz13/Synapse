@@ -13,6 +13,7 @@ import { secure } from "./security";
 import { Workspace } from "./vault/workspace";
 import { serveContent } from "./vault/content";
 import { safeFile, assertRelative } from "./vault/scanner";
+import { SessionService } from "./sessions";
 export function httpError(statusCode: number, message: string) {
   return Object.assign(new Error(message), { statusCode });
 }
@@ -27,6 +28,7 @@ export async function createApp(config: Config, dev = false) {
   const writer = new WriteCoordinator(config, state.db, (origin) =>
     work.refresh(origin),
   );
+  const sessions = new SessionService(state.db, config);
   writer.recover();
   await work.start();
   const topic = (slug: string) => {
@@ -38,10 +40,11 @@ export async function createApp(config: Config, dev = false) {
     topic(slug);
     return nids.get(slug)!;
   };
-  const ctx = { app, config, state, work, topic, nid };
+  const ctx = { app, config, state, work, topic, nid, sessions };
   registerRead(ctx, writer);
   registerEditor(ctx, writer);
   registerChangesets(ctx, writer);
+  registerSessions(ctx);
   app.get("/api/events", (req, reply) => {
     reply.hijack();
     work.subscribe(reply.raw, Number(req.headers["last-event-id"] ?? 0));
@@ -82,6 +85,7 @@ export async function createApp(config: Config, dev = false) {
     await work.close();
   });
   app.addHook("onClose", async () => {
+    sessions.close();
     state.close();
   });
   return ctx;
@@ -90,6 +94,7 @@ export type Context = {
   app: FastifyInstance;
   config: Config;
   state: ReturnType<typeof openState>;
+  sessions: SessionService;
   work: Workspace;
   topic: (slug: string) => Workspace["index"]["nodes"][number];
   nid: (slug: string) => string;
@@ -231,4 +236,45 @@ function registerRead(
     await work.refresh();
     return { indexVersion: work.version };
   });
+}
+
+function registerSessions({ app, nid, sessions }: Context) {
+  app.get("/api/sessions/current", () => sessions.current());
+  app.get("/api/sessions", () => sessions.list());
+  app.get("/api/stats/study", () => sessions.stats());
+  app.post("/api/sessions", (req) => {
+    const { topicSlug } = z
+      .object({ topicSlug: z.string().optional() })
+      .parse(req.body ?? {});
+    return sessions.start(topicSlug ? nid(topicSlug) : null);
+  });
+  app.post<{ Params: { id: string } }>("/api/sessions/:id/heartbeat", (req) => {
+    const { lastInputAt } = z
+      .object({ lastInputAt: z.number().int().nonnegative() })
+      .parse(req.body);
+    return sessions.heartbeat(req.params.id, lastInputAt);
+  });
+  app.post<{ Params: { id: string; action: string } }>(
+    "/api/sessions/:id/:action",
+    (req) => {
+      const { action } = z
+        .object({ action: z.enum(["pause", "resume", "stop", "discard"]) })
+        .parse(req.params);
+      const { note } = z
+        .object({ note: z.string().max(2000).optional() })
+        .parse(req.body ?? {});
+      return sessions.action(req.params.id, action, note);
+    },
+  );
+  app.post<{ Params: { id: string; segmentId: string } }>(
+    "/api/sessions/:id/restore-idle/:segmentId",
+    (req) => {
+      const segmentId = z.coerce
+        .number()
+        .int()
+        .positive()
+        .parse(req.params.segmentId);
+      return sessions.restoreIdle(req.params.id, segmentId);
+    },
+  );
 }

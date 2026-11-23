@@ -62,6 +62,9 @@ importers:
       '@fastify/static':
         specifier: ^8
         version: 8.3.0
+      '@js-temporal/polyfill':
+        specifier: ^0.5
+        version: 0.5.1
       '@synapse/core':
         specifier: workspace:*
         version: link:../../packages/core
