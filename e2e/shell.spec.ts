@@ -85,3 +85,39 @@ test("preserves a draft when a second editor saves first", async ({
   );
   await other.close();
 });
+
+test("reviews a course preview and undoes the approved migration", async ({
+  page,
+}) => {
+  await page.goto("/health");
+  const review = page.getByRole("region", {
+    name: "Vault repairs and migrations",
+  });
+  await review.getByLabel("Workflow").selectOption("python-course-migration");
+  const item = review
+    .locator(".change-item")
+    .filter({ hasText: "01 - Test a Prediction.md" });
+  await item.locator("summary").click();
+  await expect(item.getByText("type: lesson", { exact: false })).toBeVisible();
+  await item.getByLabel("Approve this file").check();
+  await expect(
+    review.getByRole("button", { name: "Apply approved changes" }),
+  ).toBeDisabled();
+  await review.getByLabel("Confirm changes to 1 file").check();
+  await review.getByRole("button", { name: "Apply approved changes" }).click();
+  const result = review
+    .getByRole("listitem")
+    .filter({ hasText: "01 - Test a Prediction.md" })
+    .filter({ hasText: "applied" });
+  await expect(result).toBeVisible();
+  page.once("dialog", (dialog) => void dialog.accept());
+  await result.getByRole("button", { name: "Undo this change" }).click();
+  await expect(
+    review
+      .getByRole("listitem")
+      .filter({ hasText: "01 - Test a Prediction.md" })
+      .filter({ hasText: "reverted" })
+      .first(),
+  ).toBeVisible();
+  await expect(item).toBeVisible();
+});

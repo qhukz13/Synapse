@@ -399,3 +399,81 @@ it("uses declared entry notes and body links as repair evidence", async () => {
     await writeFile(file, original);
   }
 });
+
+it("moves and restores a selected legacy note without changing bytes or its identity", async () => {
+  const vault = join(root, "legacy-vault");
+  const dataDir = join(root, "legacy-state");
+  await cp(join(projectDir, "packages/core/test/fixtures/vault"), vault, {
+    recursive: true,
+  });
+  const { mkdir } = await import("node:fs/promises");
+  const legacy = "99 - Inbox/Mathematics - Notes/Vectors - notes.md";
+  await mkdir(join(vault, "99 - Inbox/Mathematics - Notes"), {
+    recursive: true,
+  });
+  const original = "---\ntype: note\n---\n# Original note\n";
+  await writeFile(join(vault, legacy), original);
+  const config = configFrom({
+    vaultPath: vault,
+    dataDir,
+    allowVaultWrites: true,
+  });
+  let writable = await createApp(config);
+  const mutation = {
+    ...headers,
+    origin: "http://127.0.0.1:4317",
+    "x-synapse": "1",
+  };
+  const request = async (url: string, payload: object) =>
+    writable.app.inject({ url, method: "POST", headers: mutation, payload });
+  try {
+    const id = writable.nid("vectors-notes");
+    const preview = (
+      await writable.app.inject({
+        url: "/api/vault-health/proposals?kind=notes-migration",
+        headers,
+      })
+    ).json()[0];
+    expect(preview.targetPath).toBe(
+      "Personal Notes/Topics/Vectors/Vectors - notes.md",
+    );
+    expect(await readFile(join(vault, legacy), "utf8")).toBe(original);
+    const applied = await request("/api/changesets/apply", {
+      kind: "notes-migration",
+      confirm: true,
+      items: [
+        {
+          issueId: preview.issueId,
+          baseHash: preview.baseHash,
+          afterHash: preview.afterHash,
+        },
+      ],
+    });
+    expect(applied.statusCode).toBe(200);
+    expect(applied.json()[0].state).toBe("applied");
+    const itemId = applied.json()[0].id;
+    await expect(readFile(join(vault, legacy))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(await readFile(join(vault, preview.targetPath), "utf8")).toBe(
+      original,
+    );
+    await writable.app.close();
+    writable = await createApp(config);
+    expect(writable.nid("vectors-notes")).toBe(id);
+    expect(
+      (await writable.app.inject({ url: "/api/changesets", headers })).json()[0]
+        .state,
+    ).toBe("applied");
+    const restored = await request(
+      "/api/changesets/items/" + itemId + "/revert",
+      { confirm: true },
+    );
+    expect(restored.statusCode).toBe(200);
+    expect(restored.json()[0].state).toBe("reverted");
+    expect(writable.nid("vectors-notes")).toBe(id);
+    expect(await readFile(join(vault, legacy), "utf8")).toBe(original);
+  } finally {
+    await writable.app.close();
+  }
+});

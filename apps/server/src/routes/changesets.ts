@@ -17,6 +17,7 @@ import {
 
 type Proposal = {
   path: string;
+  targetPath?: string;
   issueId: string;
   op: WriteOp;
   evidence: string;
@@ -24,12 +25,66 @@ type Proposal = {
   after: string;
   baseHash: string;
 };
-const kindSchema = z.enum(["health-fix", "python-course-migration"]);
+const kindSchema = z.enum([
+  "health-fix",
+  "python-course-migration",
+  "notes-migration",
+]);
 type Kind = z.infer<typeof kindSchema>;
 
-function proposals({ work }: Context, kind: Kind): Proposal[] {
+function previewHash(item: Pick<Proposal, "targetPath" | "after">) {
+  return hash(
+    item.targetPath
+      ? JSON.stringify([item.targetPath, item.after])
+      : item.after,
+  );
+}
+function proposals({ work, config }: Context, kind: Kind): Proposal[] {
   const files = new Map(work.scan.files.map((file) => [file.path, file]));
   const result: Proposal[] = [];
+  if (kind === "notes-migration") {
+    for (const node of work.index.nodes) {
+      if (
+        node.kind !== "note" ||
+        !node.path.startsWith("99 - Inbox/") ||
+        node.path.startsWith(config.personalNotes.root + "/")
+      )
+        continue;
+      const file = files.get(node.path);
+      if (!file) continue;
+      const related =
+        node.about.length === 1
+          ? work.index.nodes.find((topic) => topic.slug === node.about[0])
+          : undefined;
+      const folder = related
+        ? (["project", "course-project"].includes(related.kind)
+            ? "Projects/"
+            : "Topics/") + related.title
+        : "General";
+      const targetPath =
+        config.personalNotes.root +
+        "/" +
+        folder +
+        "/" +
+        file.path.split("/").at(-1);
+      if (files.has(targetPath)) continue;
+      result.push({
+        path: file.path,
+        targetPath,
+        issueId: hash("notes-migration:" + file.path),
+        op: { type: "moveFile", to: targetPath },
+        evidence: related
+          ? "The legacy note is associated with " +
+            related.title +
+            ". Its filename and bytes are preserved."
+          : "No single topic association was found. The original filename and contents will be preserved in General.",
+        before: file.text,
+        after: file.text,
+        baseHash: file.hash,
+      });
+    }
+    return result;
+  }
   for (const issue of work.index.issues) {
     const file = files.get(issue.path);
     const node = work.index.nodes.find((node) => node.path === issue.path);
@@ -182,7 +237,7 @@ export function registerChangesets(ctx: Context, writer: WriteCoordinator) {
   const history = () =>
     db
       .prepare(
-        `SELECT i.id,i.path,i.state,i.error,s.kind,s.created_at FROM change_item i
+        `SELECT i.id,i.path,i.target_path,i.state,i.error,s.kind,s.created_at FROM change_item i
  JOIN change_set s ON s.id=i.change_set_id ORDER BY s.created_at DESC,i.path`,
       )
       .all();
@@ -193,7 +248,7 @@ export function registerChangesets(ctx: Context, writer: WriteCoordinator) {
      backup_path=(SELECT backup_path FROM write_journal WHERE change_item_id=i.id AND state='committed' ORDER BY created_at DESC LIMIT 1)
      WHERE i.state='proposed' AND EXISTS(SELECT 1 FROM write_journal WHERE change_item_id=i.id AND state='committed');
    UPDATE change_item AS i SET state='reverted'
-     WHERE i.state='applied' AND EXISTS(SELECT 1 FROM write_journal WHERE change_item_id=i.id AND state='committed' AND base_hash=i.after_hash AND new_hash=i.base_hash);
+     WHERE i.state='applied' AND EXISTS(SELECT 1 FROM write_journal WHERE change_item_id=i.id AND state='committed' AND base_hash=i.after_hash AND new_hash=i.base_hash AND (i.target_path IS NULL OR (path=i.target_path AND target_path=i.path)));
    UPDATE change_set AS s SET state=CASE
      WHEN NOT EXISTS(SELECT 1 FROM change_item WHERE change_set_id=s.id AND state<>'reverted') THEN 'reverted'
      WHEN NOT EXISTS(SELECT 1 FROM change_item WHERE change_set_id=s.id AND state<>'applied') THEN 'applied'
@@ -204,7 +259,7 @@ export function registerChangesets(ctx: Context, writer: WriteCoordinator) {
     const { kind } = z.object({ kind: kindSchema }).parse(request.query);
     return proposals(ctx, kind).map(({ op: _, ...item }) => ({
       ...item,
-      afterHash: hash(item.after),
+      afterHash: previewHash(item),
     }));
   });
   app.get("/api/changesets", history);
@@ -229,7 +284,7 @@ export function registerChangesets(ctx: Context, writer: WriteCoordinator) {
       if (
         !proposal ||
         proposal.baseHash !== item.baseHash ||
-        hash(proposal.after) !== item.afterHash
+        previewHash(proposal) !== item.afterHash
       )
         throw new WriteError(
           409,
@@ -253,11 +308,13 @@ export function registerChangesets(ctx: Context, writer: WriteCoordinator) {
           input.kind,
           input.kind === "health-fix"
             ? "Vault repairs"
-            : "Python Course migration",
+            : input.kind === "notes-migration"
+              ? "Legacy note migration"
+              : "Python Course migration",
           Date.now(),
         );
         const insert = db.prepare(
-          "INSERT INTO change_item(id,change_set_id,issue_id,path,op_json,evidence_json,base_hash,approved,state) VALUES(?,?,?,?,?,?,?,1,'proposed')",
+          "INSERT INTO change_item(id,change_set_id,issue_id,path,target_path,op_json,evidence_json,base_hash,approved,state) VALUES(?,?,?,?,?,?,?,?,1,'proposed')",
         );
         return selected.map((item) => {
           const id = randomUUID();
@@ -266,6 +323,7 @@ export function registerChangesets(ctx: Context, writer: WriteCoordinator) {
             batch,
             item.issueId,
             item.path,
+            item.targetPath ?? null,
             JSON.stringify(item.op),
             JSON.stringify(item.evidence),
             item.baseHash,
@@ -286,7 +344,7 @@ export function registerChangesets(ctx: Context, writer: WriteCoordinator) {
             "UPDATE change_item SET state='applied',after_hash=?,backup_path=?,applied_at=? WHERE id=?",
           ).run(written.hash, written.backupPath, Date.now(), item.id);
           const indexed = ctx.work.scan.files.find(
-            (file) => file.path === item.path,
+            (file) => file.path === (item.targetPath ?? item.path),
           );
           const stillHasIssue = ctx.work.index.issues.some(
             (issue) => issue.id === item.issueId,
@@ -302,12 +360,14 @@ export function registerChangesets(ctx: Context, writer: WriteCoordinator) {
               await writer.write({
                 trigger: "changeset",
                 changeItemId: item.id,
-                path: item.path,
+                path: item.targetPath ?? item.path,
                 baseHash: written.hash,
-                op: {
-                  type: "replaceFile",
-                  text: writer.version(item.path, written.id),
-                },
+                op: item.targetPath
+                  ? { type: "moveFile", to: item.path }
+                  : {
+                      type: "replaceFile",
+                      text: writer.version(item.path, written.id),
+                    },
               });
               db.prepare(
                 "UPDATE change_item SET state='failed',error=? WHERE id=?",
@@ -368,9 +428,9 @@ export function registerChangesets(ctx: Context, writer: WriteCoordinator) {
         );
       const journal = db
         .prepare(
-          "SELECT id FROM write_journal WHERE change_item_id=? AND base_hash=? AND new_hash=? AND state='committed' ORDER BY created_at LIMIT 1",
+          "SELECT id FROM write_journal WHERE change_item_id=? AND base_hash=? AND new_hash=? AND path=? AND state='committed' ORDER BY created_at LIMIT 1",
         )
-        .get(request.params.id, item.base_hash!, item.after_hash!);
+        .get(request.params.id, item.base_hash!, item.after_hash!, item.path!);
       if (!journal)
         throw new WriteError(
           404,
@@ -383,12 +443,14 @@ export function registerChangesets(ctx: Context, writer: WriteCoordinator) {
         await writer.write({
           trigger: "changeset",
           changeItemId: request.params.id,
-          path,
+          path: item.target_path ? String(item.target_path) : path,
           baseHash: String(item.after_hash),
-          op: {
-            type: "replaceFile",
-            text: writer.version(path, String(journal.id)),
-          },
+          op: item.target_path
+            ? { type: "moveFile", to: path }
+            : {
+                type: "replaceFile",
+                text: writer.version(path, String(journal.id)),
+              },
         });
         db.prepare(
           "UPDATE change_item SET state='reverted',reverted_at=? WHERE id=?",

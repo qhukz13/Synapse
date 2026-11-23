@@ -7,3 +7,5 @@
 - `node scripts/stress-writes.mjs` repeats the isolated write coordinator suite 100 times. Cases cover stale drafts, external replacements, authorization, one-file serialization, moves, crash recovery and exact restore.
 
 The read API integration suite exercises evidence-based folder-link and prerequisite previews, the read-only approval guard, stale approval rejection, and byte-exact course migration undo in a temporary vault.
+
+The integration suite also verifies that a selected legacy note keeps its bytes and stable identity when moved, reopened after restart, and restored.

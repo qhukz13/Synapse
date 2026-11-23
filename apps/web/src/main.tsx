@@ -810,17 +810,19 @@ type RepairPreview = {
   after: string;
   baseHash: string;
   afterHash: string;
+  targetPath?: string;
 };
 type RepairHistory = {
   id: string;
   path: string;
   state: string;
   error: string | null;
+  target_path: string | null;
 };
 function ChangeReview() {
-  const [kind, setKind] = useState<"health-fix" | "python-course-migration">(
-    "health-fix",
-  );
+  const [kind, setKind] = useState<
+    "health-fix" | "python-course-migration" | "notes-migration"
+  >("health-fix");
   const [selected, select] = useState<RepairPreview[]>([]),
     [confirmed, confirm] = useState(false);
   const [busy, setBusy] = useState(false),
@@ -876,7 +878,9 @@ function ChangeReview() {
               setKind(
                 e.target.value === "python-course-migration"
                   ? "python-course-migration"
-                  : "health-fix",
+                  : e.target.value === "notes-migration"
+                    ? "notes-migration"
+                    : "health-fix",
               );
               select([]);
               confirm(false);
@@ -887,6 +891,7 @@ function ChangeReview() {
             <option value="python-course-migration">
               Python Course metadata
             </option>
+            <option value="notes-migration">Legacy note reorganization</option>
           </select>
         </label>
       </div>
@@ -901,16 +906,29 @@ function ChangeReview() {
         <details className="change-item" key={item.issueId}>
           <summary>{item.path}</summary>
           <p>{item.evidence}</p>
-          <div className="change-diff">
-            <div>
-              <h3>Before</h3>
-              <pre>{item.before}</pre>
+          {item.targetPath ? (
+            <dl className="note-properties">
+              <div>
+                <dt>Current path</dt>
+                <dd>{item.path}</dd>
+              </div>
+              <div>
+                <dt>Destination</dt>
+                <dd>{item.targetPath}</dd>
+              </div>
+            </dl>
+          ) : (
+            <div className="change-diff">
+              <div>
+                <h3>Before</h3>
+                <pre>{item.before}</pre>
+              </div>
+              <div>
+                <h3>After</h3>
+                <pre>{item.after}</pre>
+              </div>
             </div>
-            <div>
-              <h3>After</h3>
-              <pre>{item.after}</pre>
-            </div>
-          </div>
+          )}
           <label className="change-approval">
             <input
               type="checkbox"
@@ -972,7 +990,10 @@ function ChangeReview() {
             {history.data.map((item) => (
               <li key={item.id}>
                 <strong>{item.state}</strong>
-                <small>{item.path}</small>
+                <small>
+                  {item.path}
+                  {item.target_path && " → " + item.target_path}
+                </small>
                 {item.error && <p>{item.error}</p>}
                 {item.state === "applied" && writable && (
                   <button
