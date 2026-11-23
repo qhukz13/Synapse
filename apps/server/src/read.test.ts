@@ -104,6 +104,49 @@ it("persists topic-linked study sessions through the local API", async () => {
     ).statusCode,
   ).toBe(200);
 });
+it("returns deterministic recommendations and persists resource completion", async () => {
+  const first = (
+    await ctx.app.inject({ url: "/api/recommendations", headers })
+  ).json();
+  const second = (
+    await ctx.app.inject({ url: "/api/recommendations", headers })
+  ).json();
+  expect(first.all.map((item: { slug: string }) => item.slug)).toEqual(
+    second.all.map((item: { slug: string }) => item.slug),
+  );
+  expect(first.all.length).toBeGreaterThan(0);
+  const resources = (
+    await ctx.app.inject({ url: "/api/resources", headers })
+  ).json() as { id: string; doneAt: number | null }[];
+  expect(resources.length).toBeGreaterThan(0);
+  const target = resources[0]!;
+  const writeHeaders = {
+    ...headers,
+    origin: "http://127.0.0.1:4317",
+    "x-synapse": "1",
+    "content-type": "application/json",
+  };
+  expect(
+    (
+      await ctx.app.inject({
+        method: "POST",
+        url: `/api/resources/${target.id}/state`,
+        headers: writeHeaders,
+        payload: { done: true },
+      })
+    ).statusCode,
+  ).toBe(200);
+  const after = (
+    await ctx.app.inject({ url: "/api/resources", headers })
+  ).json() as { id: string; doneAt: number | null }[];
+  expect(after.find((item) => item.id === target.id)?.doneAt).toBeTruthy();
+  await ctx.app.inject({
+    method: "POST",
+    url: `/api/resources/${target.id}/state`,
+    headers: writeHeaders,
+    payload: { done: false },
+  });
+});
 it("checks hosts and origins before handlers run", async () => {
   expect(
     (

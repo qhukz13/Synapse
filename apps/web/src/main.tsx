@@ -24,6 +24,9 @@ import {
   Search,
   ShieldCheck,
   Clock3,
+  LayoutDashboard,
+  BookmarkCheck,
+  ArrowRight,
 } from "lucide-react";
 import type { Catalogue, TopicRow } from "@synapse/core/view";
 import type { Issue, Topic } from "@synapse/core";
@@ -88,16 +91,17 @@ function Layout() {
           Synapse
         </div>
         <Link to="/">
-          <Compass />
-          Learning path
+          <LayoutDashboard /> Dashboard
+        </Link>
+        <Link to="/roadmap/tree">
+          <Compass /> Learning path
         </Link>
         <Link to="/search">
           <Search />
           Search
         </Link>
-        <Link to="/library">
-          <Files />
-          Library
+        <Link to="/resources">
+          <BookmarkCheck /> Resources
         </Link>
         <Link to="/sessions">
           <Clock3 /> Study sessions
@@ -519,6 +523,550 @@ function StudyHistory() {
     </>
   );
 }
+type ResourceRow = {
+  id: string;
+  url: string;
+  title: string;
+  kind: string;
+  owners: string[];
+  doneAt: number | null;
+};
+type RecRow = {
+  slug: string;
+  title: string;
+  kind: string;
+  stage: number;
+  domain: string;
+  category: string;
+  reasons: string[];
+  prerequisiteStatus: {
+    met: string[];
+    unmet: string[];
+    laterInPath: string[];
+    missing: string[];
+    summary: string;
+  };
+};
+function ResourceStatusButton({ resource }: { resource: ResourceRow }) {
+  const mark = async (done: boolean) => {
+    const response = await fetch(`/api/resources/${resource.id}/state`, {
+      method: "POST",
+      headers: { "x-synapse": "1", "content-type": "application/json" },
+      body: JSON.stringify({ done }),
+    });
+    if (response.ok)
+      await client.invalidateQueries({ queryKey: ["resources"] });
+  };
+  return (
+    <button
+      type="button"
+      className="resource-state"
+      aria-pressed={!!resource.doneAt}
+      onClick={() => void mark(!resource.doneAt)}
+    >
+      {resource.doneAt
+        ? "Completed · mark uncompleted"
+        : "Uncompleted · mark completed"}
+    </button>
+  );
+}
+function ResourceList({
+  resources,
+  topics,
+}: {
+  resources: ResourceRow[];
+  topics: TopicRow[];
+}) {
+  const title = new Map(topics.map((topic) => [topic.slug, topic.title]));
+  return (
+    <ul className="dashboard-resources">
+      {resources.map((resource) => (
+        <li key={resource.id}>
+          <div>
+            <a href={resource.url} target="_blank" rel="noreferrer">
+              {resource.title || resource.url} <ArrowRight size={13} />
+            </a>
+            <small>
+              {resource.kind} ·{" "}
+              {resource.owners
+                .map((owner) => title.get(owner) ?? owner)
+                .join(", ")}
+            </small>
+          </div>
+          <ResourceStatusButton resource={resource} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+function ResourcesPage() {
+  const result = query<ResourceRow[]>("resources"),
+    catalog = summary(),
+    [filter, setFilter] = useState(""),
+    [state, setState] = useState("all");
+  const topics = catalog.data?.topics ?? [];
+  const resources = (result.data ?? []).filter(
+    (resource) =>
+      (!filter ||
+        `${resource.title} ${resource.kind} ${resource.owners.map((owner) => topics.find((topic) => topic.slug === owner)?.title ?? owner).join(" ")}`
+          .toLowerCase()
+          .includes(filter.toLowerCase())) &&
+      (state === "all" || (state === "done") === !!resource.doneAt),
+  );
+  return (
+    <>
+      <header>
+        <h1>Resources</h1>
+        <p>
+          {result.data?.length ?? 0} distinct links from your curriculum ·
+          progress is saved in Synapse
+        </p>
+      </header>
+      <div className="resource-filters">
+        <input
+          aria-label="Filter resources"
+          placeholder="Find a resource or lesson"
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+        />
+        <label>
+          Status{" "}
+          <select
+            value={state}
+            onChange={(event) => setState(event.target.value)}
+          >
+            <option value="all">All</option>
+            <option value="todo">Uncompleted</option>
+            <option value="done">Completed</option>
+          </select>
+        </label>
+        <Link to="/library">
+          Browse local files <Files size={15} />
+        </Link>
+      </div>
+      {result.error && <p role="alert">{result.error.message}</p>}
+      {resources.length === 0 && <p>No resources match this filter.</p>}
+      <ResourceList resources={resources} topics={topics} />
+    </>
+  );
+}
+function Dashboard() {
+  const catalog = summary(),
+    recommendations = query<{
+      continue: RecRow[];
+      next: RecRow[];
+      oneAway: RecRow[];
+      all: RecRow[];
+    }>("recommendations"),
+    stats = query<{
+      today: string;
+      timeZone: string;
+      todayMs: number;
+      totalMs: number;
+      dailyMs: Record<string, number>;
+      streak: { current: number; longest: number };
+    }>("stats/study"),
+    resources = query<ResourceRow[]>("resources"),
+    sessions = query<SessionRecord[]>("sessions"),
+    activity =
+      query<{ at: number; kind: string; title: string; slug: string | null }[]>(
+        "activity",
+      ),
+    health = query<Issue[]>("vault-health/issues?severity=error");
+  if (catalog.isLoading)
+    return (
+      <div className="dashboard-loading" aria-label="Loading dashboard">
+        <div />
+        <div />
+        <div />
+      </div>
+    );
+  if (catalog.error || catalog.data?.unavailable)
+    return (
+      <p role="alert">{catalog.error?.message ?? catalog.data?.unavailable}</p>
+    );
+  const topics = catalog.data?.topics ?? [],
+    recs = recommendations.data;
+  const learning = topics.filter((topic) =>
+    ["concept", "moc", "intro-moc", "lesson"].includes(topic.kind),
+  );
+  const completed = learning.filter(
+    (topic) => topic.status.category === "completed",
+  ).length;
+  const stageRows = [
+    ...new Set(
+      learning.map((topic) => topic.stage).filter((stage) => stage > 0),
+    ),
+  ]
+    .sort((a, b) => a - b)
+    .map((stage) => {
+      const members = learning.filter((topic) => topic.stage === stage),
+        done = members.filter(
+          (topic) => topic.status.category === "completed",
+        ).length;
+      return {
+        stage,
+        name:
+          catalog.data?.learningPath.stages.find(
+            (item) => item.number === stage,
+          )?.name ?? `Stage ${stage}`,
+        total: members.length,
+        done,
+      };
+    });
+  const current = recs?.continue[0] ?? recs?.next[0],
+    next = recs?.next.slice(0, 5) ?? [],
+    recentSessions = sessions.data ?? [];
+  const recentCompleted = [...learning]
+    .filter((topic) => topic.status.category === "completed")
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)
+    .slice(0, 2)
+    .map((topic) => topic.slug);
+  const resourceOwners = [
+    ...new Set([
+      ...(current ? [current.slug] : []),
+      ...recentSessions
+        .slice(0, 2)
+        .flatMap((session) => (session.topic_slug ? [session.topic_slug] : [])),
+      ...recentCompleted,
+      ...next.slice(0, 3).map((item) => item.slug),
+    ]),
+  ];
+  const lessonResources = (resources.data ?? [])
+    .filter(
+      (resource) =>
+        !resource.doneAt &&
+        resource.owners.some((owner) => resourceOwners.includes(owner)),
+    )
+    .slice(0, 6);
+  const notes = [...topics].sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 5);
+  const days = stats.data
+    ? Array.from({ length: 14 }, (_, index) => {
+        const date = new Date(`${stats.data!.today}T00:00:00Z`);
+        date.setUTCDate(date.getUTCDate() - (13 - index));
+        const day = date.toISOString().slice(0, 10);
+        return { day, ms: stats.data!.dailyMs[day] ?? 0 };
+      })
+    : [];
+  const maxDay = Math.max(600_000, ...days.map((day) => day.ms));
+  return (
+    <div className="dashboard">
+      <header className="dashboard-heading">
+        <div>
+          <p className="eyebrow">YOUR LEARNING SPACE</p>
+          <h1>Dashboard</h1>
+          <p>
+            A clear next step, grounded in your curriculum and study history.
+          </p>
+        </div>
+        <Link className="dashboard-path-link" to="/roadmap/tree">
+          Open learning path <ArrowRight size={16} />
+        </Link>
+      </header>
+      {!!health.data?.length && (
+        <Link className="health-banner" to="/health">
+          <ShieldCheck size={18} />
+          {health.data.length} vault error{health.data.length === 1 ? "" : "s"}{" "}
+          need review <ArrowRight size={16} />
+        </Link>
+      )}
+      <div className="dashboard-grid">
+        <section className="dashboard-panel dash-continue">
+          <div className="panel-kicker">PICK UP WHERE YOU LEFT OFF</div>
+          <h2>Continue learning</h2>
+          {current ? (
+            <>
+              <Link
+                className="continue-title"
+                to="/t/$slug"
+                params={{ slug: current.slug }}
+              >
+                {current.title}
+                <ArrowRight size={17} />
+              </Link>
+              <p>
+                {current.domain || `Stage ${current.stage}`} ·{" "}
+                {current.category === "in_progress"
+                  ? "In progress"
+                  : "Suggested next lesson"}
+              </p>
+              <div className="continue-reasons">
+                {current.reasons.map((reason) => (
+                  <span key={reason}>{reason}</span>
+                ))}
+              </div>
+              <Link
+                className="primary-action"
+                to="/t/$slug"
+                params={{ slug: current.slug }}
+              >
+                Open lesson
+              </Link>
+            </>
+          ) : (
+            <>
+              <p>
+                You’ve completed every currently recommended learning topic.
+              </p>
+              <Link to="/roadmap/tree">Explore the curriculum</Link>
+            </>
+          )}
+        </section>
+        <section className="dashboard-panel dash-today">
+          <div className="panel-kicker">TODAY</div>
+          <h2>Your study rhythm</h2>
+          {stats.data && (
+            <>
+              <div className="today-time">
+                {Math.floor(stats.data.todayMs / 60_000)}
+                <small>min studied</small>
+              </div>
+              <div
+                className="goal-track"
+                role="progressbar"
+                aria-label="Ten minute streak goal"
+                aria-valuenow={Math.min(
+                  100,
+                  Math.floor(stats.data.todayMs / 6000),
+                )}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              >
+                <span
+                  style={{
+                    width: `${Math.min(100, (stats.data.todayMs / 600_000) * 100)}%`,
+                  }}
+                />
+              </div>
+              <small>
+                {stats.data.todayMs >= 600_000
+                  ? "Daily streak goal reached"
+                  : "10 min qualifies this day for a streak"}
+              </small>
+              <div className="streak-stats">
+                <span>
+                  <strong>{stats.data.streak.current}</strong> current streak
+                </span>
+                <span>
+                  <strong>{stats.data.streak.longest}</strong> longest
+                </span>
+              </div>
+            </>
+          )}
+        </section>
+        <section className="dashboard-panel dash-next">
+          <div className="panel-heading">
+            <div>
+              <div className="panel-kicker">RECOMMENDED</div>
+              <h2>Next lessons</h2>
+            </div>
+            <Link to="/roadmap/list">
+              All topics <ArrowRight size={14} />
+            </Link>
+          </div>
+          <p className="muted">
+            Prerequisites help order suggestions. Every topic remains open to
+            you.
+          </p>
+          {next.length ? (
+            <ol className="next-lessons">
+              {next.map((item, index) => (
+                <li key={item.slug}>
+                  <span className="next-number">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <div>
+                    <Link to="/t/$slug" params={{ slug: item.slug }}>
+                      {item.title}
+                    </Link>
+                    <small>{item.reasons.join(" · ")}</small>
+                    {item.prerequisiteStatus.unmet.length > 0 && (
+                      <small className="prereq-notice">
+                        Suggested first:{" "}
+                        {item.prerequisiteStatus.unmet
+                          .slice(0, 2)
+                          .map(
+                            (slug) =>
+                              topics.find((topic) => topic.slug === slug)
+                                ?.title ?? slug,
+                          )
+                          .join(", ")}
+                      </small>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p>No unfinished lessons found.</p>
+          )}
+        </section>
+        <section className="dashboard-panel dash-resources">
+          <div className="panel-heading">
+            <div>
+              <div className="panel-kicker">FROM YOUR LESSONS</div>
+              <h2>Resources to check out</h2>
+            </div>
+            <Link to="/resources">
+              Library <ArrowRight size={14} />
+            </Link>
+          </div>
+          <p className="muted">
+            Links from your current, recently studied, completed, and next
+            lessons.
+          </p>
+          {lessonResources.length ? (
+            <ResourceList resources={lessonResources} topics={topics} />
+          ) : (
+            <p>
+              No uncompleted resources are linked to those lessons. Browse the
+              full resource library.
+            </p>
+          )}
+        </section>
+        <section className="dashboard-panel dash-progress">
+          <div className="panel-heading">
+            <div>
+              <div className="panel-kicker">CURRICULUM</div>
+              <h2>Learning progress</h2>
+            </div>
+            <Link to="/roadmap/list">
+              Explore <ArrowRight size={14} />
+            </Link>
+          </div>
+          <div className="overall-progress">
+            <strong>
+              {completed}
+              <span> / {learning.length}</span>
+            </strong>
+            <small>learning topics completed</small>
+            <div className="goal-track">
+              <span
+                style={{
+                  width: `${learning.length ? (completed / learning.length) * 100 : 0}%`,
+                }}
+              />
+            </div>
+          </div>
+          <div className="stage-progress">
+            {stageRows.map((row) => (
+              <div className="stage-row" key={row.stage}>
+                <span>
+                  Stage {row.stage} · {row.name}
+                </span>
+                <small>
+                  {row.done}/{row.total}
+                </small>
+                <div className="goal-track">
+                  <span
+                    style={{
+                      width: `${row.total ? (row.done / row.total) * 100 : 0}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+        <section className="dashboard-panel dash-study">
+          <div className="panel-heading">
+            <div>
+              <div className="panel-kicker">LAST 14 DAYS</div>
+              <h2>Study time</h2>
+            </div>
+            <Link to="/sessions">
+              History <ArrowRight size={14} />
+            </Link>
+          </div>
+          <div className="study-bars">
+            {days.map((item) => (
+              <div
+                className="study-bar-day"
+                key={item.day}
+                title={`${item.day}: ${Math.floor(item.ms / 60_000)} minutes`}
+              >
+                <span
+                  className={item.ms >= 600_000 ? "qualifies" : ""}
+                  style={{
+                    height: `${Math.max(item.ms ? 4 : 1, (item.ms / maxDay) * 100)}%`,
+                  }}
+                />
+                <small>{item.day.slice(8)}</small>
+              </div>
+            ))}
+          </div>
+          <small>
+            Outlined days meet the 10 minute streak threshold ·{" "}
+            {stats.data?.timeZone}
+          </small>
+        </section>
+        <section className="dashboard-panel dash-activity">
+          <div className="panel-heading">
+            <div>
+              <div className="panel-kicker">YOUR RECENT WORK</div>
+              <h2>Recent activity</h2>
+            </div>
+            <Link to="/sessions">
+              Sessions <ArrowRight size={14} />
+            </Link>
+          </div>
+          {activity.data?.length ? (
+            <ul className="activity-list">
+              {activity.data.slice(0, 6).map((item, index) => (
+                <li key={`${item.kind}-${item.at}-${index}`}>
+                  <span className={`activity-dot ${item.kind}`} />
+                  <div>
+                    {item.slug ? (
+                      <Link to="/t/$slug" params={{ slug: item.slug }}>
+                        {item.title}
+                      </Link>
+                    ) : (
+                      <strong>{item.title}</strong>
+                    )}
+                    <small>
+                      {item.kind.replace("-", " ")} ·{" "}
+                      {new Date(item.at).toLocaleString()}
+                    </small>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>
+              No recent activity yet. Your study sessions and curriculum changes
+              will appear here.
+            </p>
+          )}
+        </section>
+        <section className="dashboard-panel dash-edited">
+          <div className="panel-heading">
+            <div>
+              <div className="panel-kicker">VAULT NOTES</div>
+              <h2>Recently edited</h2>
+            </div>
+            <Link to="/roadmap/tree">
+              Browse <ArrowRight size={14} />
+            </Link>
+          </div>
+          <ul className="recent-notes">
+            {notes.map((note) => (
+              <li key={note.slug}>
+                <Link to="/t/$slug" params={{ slug: note.slug }}>
+                  <BookOpen size={14} />
+                  <span>
+                    {note.title}
+                    <small>{note.domain || note.folder}</small>
+                  </span>
+                </Link>
+                <small>{new Date(note.mtimeMs).toLocaleDateString()}</small>
+              </li>
+            ))}
+          </ul>
+        </section>
+      </div>
+    </div>
+  );
+}
 function Curriculum() {
   const result = summary(),
     [filter, setFilter] = useState(""),
@@ -632,7 +1180,7 @@ function TopicList() {
     <>
       <header>
         <h1>Curriculum list</h1>
-        <Link to="/">Open as tree</Link>
+        <Link to="/roadmap/tree">Open as tree</Link>
       </header>
       <input
         aria-label="Find a topic"
@@ -1011,7 +1559,7 @@ function Reader() {
     <>
       <div className="crumb reader-crumb">
         <span>
-          <Link to="/">Learning path</Link>
+          <Link to="/roadmap/tree">Learning path</Link>
           {n.folder && " / " + n.folder}
         </span>
         {data.data?.writeEnabled && (
@@ -1576,6 +2124,11 @@ const router = createRouter({
     createRoute({
       getParentRoute: () => root,
       path: "/",
+      component: Dashboard,
+    }),
+    createRoute({
+      getParentRoute: () => root,
+      path: "/roadmap/tree",
       component: Curriculum,
     }),
     createRoute({
@@ -1599,6 +2152,11 @@ const router = createRouter({
       getParentRoute: () => root,
       path: "/library",
       component: Library,
+    }),
+    createRoute({
+      getParentRoute: () => root,
+      path: "/resources",
+      component: ResourcesPage,
     }),
     createRoute({
       getParentRoute: () => root,

@@ -21,6 +21,7 @@
     "./status": "./src/status.ts",
     "./patch": "./src/patch.ts",
     "./sessions": "./src/sessions.ts",
+    "./recommendations": "./src/recommendations.ts",
     "./exercise-match": "./src/parse/exercise-match.ts"
   }
 }

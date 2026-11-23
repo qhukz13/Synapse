@@ -14,6 +14,7 @@ import { Workspace } from "./vault/workspace";
 import { serveContent } from "./vault/content";
 import { safeFile, assertRelative } from "./vault/scanner";
 import { SessionService } from "./sessions";
+import { recommendTopics } from "@synapse/core/recommendations";
 export function httpError(statusCode: number, message: string) {
   return Object.assign(new Error(message), { statusCode });
 }
@@ -153,27 +154,124 @@ function registerRead(
     edges: work.index.edges,
     nodes: work.index.nodes.map(topicRow),
   }));
+  app.get("/api/recommendations", () => {
+    const lastActivity: Record<string, number> = Object.create(null);
+    for (const node of work.index.nodes) lastActivity[node.slug] = node.mtimeMs;
+    const recentSessions = state.db
+      .prepare(
+        `SELECT ni.slug,MAX(ss.started_at) AS at
+      FROM study_session ss JOIN node_identity ni ON ni.nid=ss.nid
+      WHERE ss.state!='discarded' AND ss.started_at>=? GROUP BY ni.slug`,
+      )
+      .all(Date.now() - 14 * 86400_000) as { slug: string; at: number }[];
+    for (const row of recentSessions)
+      lastActivity[row.slug] = Math.max(lastActivity[row.slug] ?? 0, row.at);
+    const statusActivity = state.db
+      .prepare(
+        `SELECT ni.slug,MAX(se.at) AS at
+      FROM status_event se JOIN node_identity ni ON ni.nid=se.nid GROUP BY ni.slug`,
+      )
+      .all() as { slug: string; at: number }[];
+    for (const row of statusActivity)
+      lastActivity[row.slug] = Math.max(lastActivity[row.slug] ?? 0, row.at);
+    const dependents: Record<string, number> = Object.create(null);
+    for (const edge of work.index.edges)
+      dependents[edge.to] = (dependents[edge.to] ?? 0) + 1;
+    return recommendTopics(
+      work.index.nodes.map((node) => ({
+        slug: node.slug,
+        title: node.title,
+        kind: node.kind,
+        stage: node.stage,
+        domain: node.domain,
+        track: String(node.position?.track ?? node.fm.meta.track ?? "core"),
+        importance: String(node.fm.meta.importance ?? ""),
+        difficulty: String(node.fm.meta.difficulty ?? ""),
+        category: node.status.category,
+        order: node.position?.index ?? null,
+        introMoc:
+          node.position !== null ||
+          work.index.edges.some((edge) => edge.to === node.slug),
+      })),
+      work.index.prerequisites,
+      lastActivity,
+      dependents,
+      new Set(recentSessions.map((row) => row.slug)),
+    );
+  });
+  app.get("/api/activity", () =>
+    state.db
+      .prepare(
+        `SELECT at,kind,title,slug FROM (
+    SELECT se.at AS at,'status' AS kind,ni.title || ' · ' || se.to_status AS title,ni.slug AS slug
+      FROM status_event se JOIN node_identity ni ON ni.nid=se.nid
+    UNION ALL
+    SELECT ss.started_at AS at,'session' AS kind,COALESCE(ni.title,'General study') AS title,ni.slug AS slug
+      FROM study_session ss LEFT JOIN node_identity ni ON ni.nid=ss.nid WHERE ss.state!='discarded'
+    UNION ALL
+    SELECT cs.created_at AS at,'change-set' AS kind,cs.title AS title,NULL AS slug
+      FROM change_set cs WHERE cs.state IN ('applied','partially-applied')
+  ) ORDER BY at DESC LIMIT 8`,
+      )
+      .all(),
+  );
   app.get("/api/library", () => work.scan.library);
   app.get("/api/resources", () => {
     const resources = new Map<
       string,
-      { url: string; title: string; kind: string; id: string; owners: string[] }
+      {
+        url: string;
+        title: string;
+        kind: string;
+        id: string;
+        owners: string[];
+        doneAt: number | null;
+      }
     >();
     for (const n of work.index.nodes)
       for (const r of n.resources) {
-        const found = resources.get(r.url);
+        const found = resources.get(r.id);
         if (found) {
           if (!found.owners.includes(n.slug)) found.owners.push(n.slug);
         } else
-          resources.set(r.url, {
+          resources.set(r.id, {
             url: r.url,
             title: r.title,
             kind: r.kind,
             id: r.id,
             owners: [n.slug],
+            doneAt: null,
           });
       }
+    for (const resource of resources.values()) {
+      const resourceState = state.db
+        .prepare("SELECT done_at FROM resource_state WHERE resource_id=?")
+        .get(resource.id) as { done_at: number | null } | undefined;
+      resource.doneAt = resourceState?.done_at ?? null;
+    }
     return [...resources.values()];
+  });
+  app.post<{ Params: { id: string } }>("/api/resources/:id/state", (req) => {
+    const { done } = z.object({ done: z.boolean() }).parse(req.body);
+    const exists = work.index.nodes.some((node) =>
+      node.resources.some((resource) => resource.id === req.params.id),
+    );
+    if (!exists) throw httpError(404, "Resource not found");
+    state.db
+      .prepare(
+        `INSERT INTO resource_state(resource_id,done_at) VALUES(?,?)
+      ON CONFLICT(resource_id) DO UPDATE SET done_at=excluded.done_at`,
+      )
+      .run(req.params.id, done ? Date.now() : null);
+    return {
+      id: req.params.id,
+      done,
+      doneAt: done
+        ? (state.db
+            .prepare("SELECT done_at FROM resource_state WHERE resource_id=?")
+            .get(req.params.id)?.done_at ?? null)
+        : null,
+    };
   });
   app.get<{ Params: { "*": string } }>("/api/files/*", (req, res) => {
     const p = req.params["*"];

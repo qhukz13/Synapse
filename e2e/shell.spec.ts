@@ -1,4 +1,39 @@
 import { test, expect } from "@playwright/test";
+test("shows real dashboard recommendations and persists resource completion", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Next lessons" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Learning progress" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/Prerequisites help order suggestions/),
+  ).toBeVisible();
+  await page.getByRole("link", { name: /Resources/ }).click();
+  const item = page.locator(".dashboard-resources li").first();
+  await expect(item).toBeVisible();
+  await item.getByRole("button", { name: /mark completed/i }).click();
+  await expect(
+    item.getByRole("button", { name: /mark uncompleted/i }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    page
+      .locator(".dashboard-resources li")
+      .first()
+      .getByRole("button", { name: /mark uncompleted/i }),
+  ).toBeVisible();
+  await page
+    .locator(".dashboard-resources li")
+    .first()
+    .getByRole("button", { name: /mark uncompleted/i })
+    .click();
+});
+
 test("starts, pauses, resumes and persists a study timer", async ({ page }) => {
   await page.goto("/");
   const timer = page.getByRole("contentinfo", { name: "Study timer" });
@@ -90,9 +125,7 @@ test("uses vault search, reads a note and follows a prerequisite", async ({
       outbound.push(url.host);
   });
   await page.goto("/");
-  await expect(
-    page.getByRole("heading", { name: "Learning path" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
   await page.getByRole("link", { name: "Search", exact: true }).click();
   await page
     .getByRole("searchbox", { name: "Search vault" })
