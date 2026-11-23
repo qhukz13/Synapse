@@ -1,0 +1,10 @@
+# Synthetic synchronization artifact for the scanner tests.
+!edge-cases/zz-synthetic/*.sync-conflict-*.md
+# Allow only the authored association example inside the isolated edge-case tree.
+!edge-cases/Personal Notes/
+edge-cases/Personal Notes/*
+!edge-cases/Personal Notes/Topics/
+edge-cases/Personal Notes/Topics/*
+!edge-cases/Personal Notes/Topics/Gradient/
+edge-cases/Personal Notes/Topics/Gradient/*
+!edge-cases/Personal Notes/Topics/Gradient/Gradient - extra.md

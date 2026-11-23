@@ -1,0 +1,4 @@
+# The fixture checksums cover exact bytes on every platform, including CRLF.
+vault/** -text
+edge-cases/** -text
+edge-cases/zz-synthetic/crlf.md whitespace=cr-at-eol
