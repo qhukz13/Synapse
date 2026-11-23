@@ -30,3 +30,9 @@ The reader shows the active vault path and access mode. Each topic displays its 
 ## Remaining work
 
 Finish M5 acceptance including manual Obsidian concurrency and recovery verification. Continue with M6 repair and migration change sets, M7 timers and streaks, M8 personal notes and completion tracking, M9 attachment management and file viewers, M10 interactive graph and daily dashboard, M11 manual review and statistics, then M12–M13 full responsive, performance and accessibility acceptance.
+
+## M6 repair and migration checkpoint
+
+Vault Health now previews folder-link repairs, prerequisites already documented in the body, and Python Course metadata additions. The real vault produced nine repair previews and 25 course previews. Each item shows its evidence and the original and proposed contents. Apply requires individual file selection, explicit batch confirmation, a writable configuration, and matching hashes for the source and preview. The journal records the backups and supplies the original bytes for undo. A stale approval before apply requires a fresh preview. A conflicting change after the batch starts is recorded against the affected item.
+
+The 122-check suite passed, including isolated apply and byte-exact undo, stale approvals, and read-only previews. The remaining M6 work includes legacy note moves, additional repair families, editable proposal values, semantic post-apply validation with recovery, and the complete browser acceptance suite for approval and undo. M7 study sessions remain pending.

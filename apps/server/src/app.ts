@@ -1,3 +1,4 @@
+import { registerChangesets } from "./routes/changesets";
 import { registerEditor } from "./routes/editor";
 import { WriteCoordinator, WriteError } from "./vault/writes";
 import Fastify, { type FastifyInstance } from "fastify";
@@ -40,6 +41,7 @@ export async function createApp(config: Config, dev = false) {
   const ctx = { app, config, state, work, topic, nid };
   registerRead(ctx, writer);
   registerEditor(ctx, writer);
+  registerChangesets(ctx, writer);
   app.get("/api/events", (req, reply) => {
     reply.hijack();
     work.subscribe(reply.raw, Number(req.headers["last-event-id"] ?? 0));

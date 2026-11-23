@@ -270,3 +270,40 @@ summary small {
   margin: 0;
   padding-inline-start: 18px;
 }
+.change-review {
+  margin: 16px 0 24px;
+}
+.change-item {
+  border-top: 1px solid var(--border-1);
+  padding: 7px 0;
+  overflow-wrap: anywhere;
+}
+.change-diff {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.change-diff pre {
+  background: var(--bg-1);
+  border: 1px solid var(--border-1);
+  border-radius: 6px;
+  max-height: 240px;
+  overflow: auto;
+  padding: 10px;
+}
+.change-approval {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0;
+}
+.change-approval input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+}
+@media (max-width: 767px) {
+  .change-diff {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

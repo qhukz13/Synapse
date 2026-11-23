@@ -802,11 +802,210 @@ function Library() {
     </>
   );
 }
+type RepairPreview = {
+  issueId: string;
+  path: string;
+  evidence: string;
+  before: string;
+  after: string;
+  baseHash: string;
+  afterHash: string;
+};
+type RepairHistory = {
+  id: string;
+  path: string;
+  state: string;
+  error: string | null;
+};
+function ChangeReview() {
+  const [kind, setKind] = useState<"health-fix" | "python-course-migration">(
+    "health-fix",
+  );
+  const [selected, select] = useState<RepairPreview[]>([]),
+    [confirmed, confirm] = useState(false);
+  const [busy, setBusy] = useState(false),
+    [message, setMessage] = useState("");
+  const access = summary();
+  const preview = query<RepairPreview[]>("vault-health/proposals?kind=" + kind);
+  const history = query<RepairHistory[]>("changesets");
+  async function mutate(path: string, body: object) {
+    setBusy(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/" + path, {
+        method: "POST",
+        headers: { "X-Synapse": "1", "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) throw Error((await response.json()).message);
+      select([]);
+      confirm(false);
+      await client.invalidateQueries();
+      setMessage("Change recorded. Review the result below.");
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "The change could not be recorded.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  function toggle(item: RepairPreview, checked: boolean) {
+    confirm(false);
+    select((previous) =>
+      checked
+        ? [...previous.filter((entry) => entry.path !== item.path), item]
+        : previous.filter((entry) => entry.issueId !== item.issueId),
+    );
+  }
+  const writable = access.data?.writeEnabled === true;
+  return (
+    <section
+      className="change-review"
+      aria-label="Vault repairs and migrations"
+    >
+      <h2>Proposed changes</h2>
+      <div className="view-controls">
+        <label>
+          Workflow{" "}
+          <select
+            value={kind}
+            onChange={(e) => {
+              setKind(
+                e.target.value === "python-course-migration"
+                  ? "python-course-migration"
+                  : "health-fix",
+              );
+              select([]);
+              confirm(false);
+              setMessage("");
+            }}
+          >
+            <option value="health-fix">Vault repairs</option>
+            <option value="python-course-migration">
+              Python Course metadata
+            </option>
+          </select>
+        </label>
+      </div>
+      {preview.error && <p role="alert">{preview.error.message}</p>}
+      {preview.data?.length === 0 && (
+        <p>No proposals are available in this workflow.</p>
+      )}
+      {!writable && (
+        <p>The vault is read-only. You can inspect each preview.</p>
+      )}
+      {preview.data?.map((item) => (
+        <details className="change-item" key={item.issueId}>
+          <summary>{item.path}</summary>
+          <p>{item.evidence}</p>
+          <div className="change-diff">
+            <div>
+              <h3>Before</h3>
+              <pre>{item.before}</pre>
+            </div>
+            <div>
+              <h3>After</h3>
+              <pre>{item.after}</pre>
+            </div>
+          </div>
+          <label className="change-approval">
+            <input
+              type="checkbox"
+              disabled={!writable || busy}
+              checked={selected.some(
+                (entry) =>
+                  entry.issueId === item.issueId &&
+                  entry.baseHash === item.baseHash &&
+                  entry.afterHash === item.afterHash,
+              )}
+              onChange={(e) => toggle(item, e.target.checked)}
+            />{" "}
+            Approve this file
+          </label>
+        </details>
+      ))}
+      {!!selected.length && (
+        <ul>
+          {selected.map((item) => (
+            <li key={item.path}>{item.path}</li>
+          ))}
+        </ul>
+      )}
+      {selected.length > 0 && (
+        <div className="view-controls">
+          <label>
+            <input
+              type="checkbox"
+              checked={confirmed}
+              onChange={(e) => confirm(e.target.checked)}
+            />{" "}
+            Confirm changes to {selected.length}{" "}
+            {selected.length === 1 ? "file" : "files"}
+          </label>
+          <button
+            type="button"
+            disabled={busy || !confirmed || !writable}
+            onClick={() =>
+              void mutate("changesets/apply", {
+                kind,
+                confirm: true,
+                items: selected.map(({ issueId, baseHash, afterHash }) => ({
+                  issueId,
+                  baseHash,
+                  afterHash,
+                })),
+              })
+            }
+          >
+            Apply approved changes
+          </button>
+        </div>
+      )}
+      {message && <p role="status">{message}</p>}
+      {!!history.data?.length && (
+        <>
+          <h2>Change history</h2>
+          <ul className="issues">
+            {history.data.map((item) => (
+              <li key={item.id}>
+                <strong>{item.state}</strong>
+                <small>{item.path}</small>
+                {item.error && <p>{item.error}</p>}
+                {item.state === "applied" && writable && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          "Restore the previous bytes of " + item.path + "?",
+                        )
+                      )
+                        void mutate("changesets/items/" + item.id + "/revert", {
+                          confirm: true,
+                        });
+                    }}
+                  >
+                    Undo this change
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
+  );
+}
 function Health() {
   const result = query<Issue[]>("vault-health/issues");
   return (
     <>
       <h1>Vault Health</h1>
+      <ChangeReview />
       {result.error && <p role="alert">{result.error.message}</p>}
       {result.data?.length === 0 && <p>No issues found.</p>}
       <ul className="issues">

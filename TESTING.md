@@ -5,3 +5,5 @@
 - `pnpm verify:real-vault --vault /path/to/vault` reads the original curriculum and compares before and after checksums and modification times. Use `--inventory-only` for a different curriculum.
 - Use synthetic fixtures or temporary copies for write tests. Private fixture copies belong under the ignored `.local` directory.
 - `node scripts/stress-writes.mjs` repeats the isolated write coordinator suite 100 times. Cases cover stale drafts, external replacements, authorization, one-file serialization, moves, crash recovery and exact restore.
+
+The read API integration suite exercises evidence-based folder-link and prerequisite previews, the read-only approval guard, stale approval rejection, and byte-exact course migration undo in a temporary vault.

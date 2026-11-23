@@ -245,3 +245,128 @@ it("returns the entire original Markdown body and the vault connection details",
     writeEnabled: false,
   });
 });
+
+it("previews course migration read-only and applies and reverts the selected file in an isolated vault", async () => {
+  const url = "/api/vault-health/proposals?kind=python-course-migration";
+  const payloadFor = (item: {
+    issueId: string;
+    baseHash: string;
+    afterHash: string;
+  }) => ({
+    kind: "python-course-migration",
+    confirm: true,
+    items: [
+      {
+        issueId: item.issueId,
+        baseHash: item.baseHash,
+        afterHash: item.afterHash,
+      },
+    ],
+  });
+  const mutation = {
+    ...headers,
+    origin: "http://127.0.0.1:4317",
+    "x-synapse": "1",
+  };
+  const previews = (await ctx.app.inject({ url, headers })).json();
+  expect(previews.length).toBeGreaterThan(0);
+  expect(
+    (
+      await ctx.app.inject({
+        url: "/api/changesets/apply",
+        method: "POST",
+        headers: mutation,
+        payload: payloadFor(previews[0]),
+      })
+    ).statusCode,
+  ).toBe(403);
+  const vault = join(root, "migration-vault");
+  await cp(join(projectDir, "packages/core/test/fixtures/vault"), vault, {
+    recursive: true,
+  });
+  const writable = await createApp(
+    configFrom({
+      vaultPath: vault,
+      dataDir: join(root, "migration-state"),
+      allowVaultWrites: true,
+    }),
+  );
+  try {
+    const proposals = (await writable.app.inject({ url, headers })).json();
+    const proposal = proposals.find((item: { path: string }) =>
+      item.path.endsWith("01 - Test a Prediction.md"),
+    );
+    expect(proposal.after).toContain("type: lesson");
+    expect(proposal.after.endsWith(proposal.before)).toBe(true);
+    const file = join(vault, proposal.path);
+    expect(await readFile(file, "utf8")).toBe(proposal.before);
+    const stale = await writable.app.inject({
+      url: "/api/changesets/apply",
+      method: "POST",
+      headers: mutation,
+      payload: payloadFor({ ...proposal, baseHash: "a".repeat(64) }),
+    });
+    expect(stale.statusCode).toBe(409);
+    const applied = await writable.app.inject({
+      url: "/api/changesets/apply",
+      method: "POST",
+      headers: mutation,
+      payload: payloadFor(proposal),
+    });
+    expect(applied.statusCode).toBe(200);
+    const result = applied.json()[0];
+    expect(result.state).toBe("applied");
+    expect(await readFile(file, "utf8")).toBe(proposal.after);
+    const reverted = await writable.app.inject({
+      url: "/api/changesets/items/" + result.id + "/revert",
+      method: "POST",
+      headers: mutation,
+      payload: { confirm: true },
+    });
+    expect(reverted.statusCode).toBe(200);
+    expect(reverted.json()[0].state).toBe("reverted");
+    expect(await readFile(file, "utf8")).toBe(proposal.before);
+  } finally {
+    await writable.app.close();
+  }
+});
+
+it("uses declared entry notes and body links as repair evidence", async () => {
+  const folderLink =
+    "# Repair example\n\nSee [[02 - Mathematics|math stage]].\n";
+  await writeFile(join(root, "vault", "Repair example.md"), folderLink);
+  const file = join(
+    root,
+    "vault",
+    "04 - Classical Machine Learning",
+    "Linear Regression.md",
+  );
+  const original = await readFile(file, "utf8");
+  await writeFile(file, original + "\n\n## Prerequisites\n- [[Vectors]]\n");
+  await ctx.work.refresh();
+  try {
+    const response = await ctx.app.inject({
+      url: "/api/vault-health/proposals?kind=health-fix",
+      headers,
+    });
+    expect(response.statusCode).toBe(200);
+    const proposals = response.json() as { path: string; after: string }[];
+    expect(
+      proposals.find((item) => item.path === "Repair example.md")?.after,
+    ).toBe(
+      folderLink.replace(
+        "[[02 - Mathematics|math stage]]",
+        "[[Mathematics|math stage]]",
+      ),
+    );
+    expect(
+      proposals.find((item) => item.path.endsWith("Linear Regression.md"))
+        ?.after,
+    ).toContain("prerequisites: [Dot Products, Vectors]");
+    expect(
+      await readFile(join(root, "vault", "Repair example.md"), "utf8"),
+    ).toBe(folderLink);
+  } finally {
+    await writeFile(file, original);
+  }
+});
