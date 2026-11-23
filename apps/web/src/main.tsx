@@ -536,13 +536,16 @@ function Reader() {
   };
   return (
     <>
-      {data.data?.writeEnabled && (
-        <Link to="/t/$slug/edit" params={{ slug }}>
-          Edit source
-        </Link>
-      )}
-      <div className="crumb">
-        <Link to="/">Learning path</Link> / {n.folder}
+      <div className="crumb reader-crumb">
+        <span>
+          <Link to="/">Learning path</Link>
+          {n.folder && " / " + n.folder}
+        </span>
+        {data.data?.writeEnabled && (
+          <Link to="/t/$slug/edit" params={{ slug }}>
+            Edit source
+          </Link>
+        )}
       </div>
       <header>
         <h1>{n.heading || n.title}</h1>
@@ -643,7 +646,13 @@ function Reader() {
         writable={data.data?.writeEnabled === true}
       />
       <Suspense fallback={<p role="status">Rendering note…</p>}>
-        <MarkdownView source={n.body} resolveLink={resolveLink} />
+        <MarkdownView
+          source={n.body.replace(
+            /^\s{0,3}(?:\r?\n[ \t]{0,3})*# +[^\r\n]+(?:\r?\n|$)/,
+            "",
+          )}
+          resolveLink={resolveLink}
+        />
       </Suspense>
     </>
   );

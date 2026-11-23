@@ -14,7 +14,7 @@ M5, editing and synchronization. Synapse is usable as a local vault reader. The 
 ## Verification
 
 - The 119-check suite passed after write routes were integrated. The independent vault snapshot reported zero changes across 227 files, including all 194 Markdown notes.
-- Browser search and prerequisite navigation passed in three viewport sizes without an outbound request.
+- Six Chromium checks passed across three viewport sizes. They covered search, prerequisite navigation, the absence of outbound requests during that journey, and draft preservation after a concurrent editor saves. Desktop and compact sample reader screenshots were inspected. The real vault was also opened through the read-only API, which returned Linear Regression and indexed all 194 notes.
 - The first 100-round stress run passed 1,700 checks. The expanded 21-case suite then passed 2,100 checks across 100 independent rounds.
 - Discovery and current PDF/URL totals differ as described in docs/ARCH-NOTES.md. The POSIX write fallback has the final check-to-rename limitation documented in DEVELOPMENT.md.
 - Production build passed. Vite warned that the lazy editor chunk exceeds its default size warning threshold.

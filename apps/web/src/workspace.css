@@ -233,3 +233,13 @@ summary small {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+.reader-crumb {
+  display: flex;
+  gap: 6px 16px;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.studio .synapse-reader {
+  margin-top: 1rem;
+}
