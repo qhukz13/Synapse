@@ -1375,6 +1375,7 @@ function Dashboard() {
         </Link>
       )}
       <div className="dashboard-grid">
+        <ReviewQueuePanel />
         <section className="dashboard-panel dash-continue">
           <div className="panel-kicker">PICK UP WHERE YOU LEFT OFF</div>
           <h2>Continue learning</h2>
@@ -1734,6 +1735,161 @@ function Dashboard() {
           </ul>
         </section>
       </div>
+    </div>
+  );
+}
+type ReviewItem = {
+  id: string;
+  slug: string;
+  title: string;
+  dueDate: string | null;
+  reason: string | null;
+};
+function ReviewQueuePanel() {
+  const queue = query<ReviewItem[]>("reviews");
+  const history = query<
+    {
+      id: string;
+      slug: string;
+      title: string;
+      completed_at: number;
+      confidence: number | null;
+      note: string | null;
+    }[]
+  >("reviews?history=true");
+  const [error, setError] = useState("");
+  const update = async (id: string, action: "complete" | "remove") => {
+    setError("");
+    try {
+      const response = await fetch(
+        `/api/reviews/${encodeURIComponent(id)}${action === "complete" ? "/complete" : ""}`,
+        {
+          method: action === "complete" ? "POST" : "DELETE",
+          headers: { "x-synapse": "1", "content-type": "application/json" },
+          body: JSON.stringify({}),
+        },
+      );
+      if (!response.ok) throw Error("Could not update the review queue.");
+      await client.invalidateQueries({ queryKey: ["reviews"] });
+      await client.invalidateQueries({ queryKey: ["reviews?history=true"] });
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not update the review queue.",
+      );
+    }
+  };
+  return (
+    <section className="dashboard-panel dash-reviews">
+      <div className="panel-heading">
+        <div>
+          <div className="panel-kicker">MANUAL REVIEWS</div>
+          <h2>Review queue</h2>
+        </div>
+        <span>{queue.data?.length ?? 0} queued</span>
+      </div>
+      {queue.error ? <p role="alert">{queue.error.message}</p> : null}
+      {error && <p role="alert">{error}</p>}
+      {queue.data?.length ? (
+        <ul className="review-queue-list">
+          {queue.data.map((item) => (
+            <li key={item.id}>
+              <div>
+                <Link to="/t/$slug" params={{ slug: item.slug }}>
+                  {item.title}
+                </Link>
+                <small>
+                  {item.dueDate ? `Review on ${item.dueDate}` : "No date set"}
+                  {item.reason ? ` · ${item.reason}` : ""}
+                </small>
+              </div>
+              <div>
+                <button
+                  type="button"
+                  onClick={() => void update(item.id, "complete")}
+                >
+                  Complete
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void update(item.id, "remove")}
+                >
+                  Remove
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p>No topics are scheduled for manual review.</p>
+      )}
+      {!!history.data?.length && (
+        <details className="review-history">
+          <summary>Recent review history</summary>
+          <ul>
+            {history.data.slice(0, 8).map((item) => (
+              <li key={item.id}>
+                <Link to="/t/$slug" params={{ slug: item.slug }}>
+                  {item.title}
+                </Link>
+                <small>
+                  {new Date(item.completed_at).toLocaleString()}
+                  {item.confidence ? ` · confidence ${item.confidence}/3` : ""}
+                  {item.note ? ` · ${item.note}` : ""}
+                </small>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </section>
+  );
+}
+function TopicReviewAction({ slug }: { slug: string }) {
+  const reviews = query<ReviewItem[]>("reviews");
+  const [dueDate, setDueDate] = useState("");
+  const [message, setMessage] = useState("");
+  const queued = reviews.data?.some((item) => item.slug === slug) ?? false;
+  const add = async () => {
+    setMessage("");
+    try {
+      const response = await fetch("/api/reviews", {
+        method: "POST",
+        headers: { "x-synapse": "1", "content-type": "application/json" },
+        body: JSON.stringify({ slug, dueDate: dueDate || null }),
+      });
+      const result = await response.json();
+      if (!response.ok)
+        setMessage(result.message ?? "Could not add this review.");
+      else {
+        setMessage("Added to manual review queue.");
+        await client.invalidateQueries({ queryKey: ["reviews"] });
+      }
+    } catch {
+      setMessage("Could not add this review.");
+    }
+  };
+  return (
+    <div className="topic-review-action">
+      {queued ? (
+        <span>In manual review queue</span>
+      ) : (
+        <>
+          <label>
+            Optional review date{" "}
+            <input
+              type="date"
+              value={dueDate}
+              onChange={(event) => setDueDate(event.target.value)}
+            />
+          </label>
+          <button type="button" onClick={() => void add()}>
+            Add to review queue
+          </button>
+        </>
+      )}
+      {message && <small role="status">{message}</small>}
     </div>
   );
 }
@@ -3322,6 +3478,7 @@ function Reader() {
       <header>
         {!hasLeadingHeading && <h1>{n.heading || n.title}</h1>}
         <TopicSessionAction slug={slug} />
+        <TopicReviewAction slug={slug} />
         <p>
           {[
             n.domain,

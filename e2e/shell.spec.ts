@@ -241,6 +241,26 @@ test("imports a managed copy and keeps the source file intact", async ({
   expect(await source.text()).toContain("voltage,temperature");
 });
 
+test("queues, completes, and records a manual topic review", async ({
+  page,
+}) => {
+  await page.goto("/t/linear-regression");
+  await page.getByLabel("Optional review date").fill("2026-12-01");
+  await page.getByRole("button", { name: "Add to review queue" }).click();
+  await expect(page.getByText("In manual review queue")).toBeVisible();
+  await page.goto("/");
+  const reviews = page.locator(".dash-reviews");
+  await expect(
+    reviews.getByRole("link", { name: "Linear Regression" }),
+  ).toBeVisible();
+  await reviews.getByRole("button", { name: "Complete" }).click();
+  await expect(reviews).toContainText(
+    "No topics are scheduled for manual review.",
+  );
+  await reviews.getByText("Recent review history").click();
+  await expect(reviews).toContainText("Linear Regression");
+});
+
 test("finds and confirms a moved attachment reference", async ({
   page,
 }, testInfo) => {

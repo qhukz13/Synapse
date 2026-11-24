@@ -2,6 +2,7 @@ import { registerChangesets } from "./routes/changesets";
 import { registerEditor } from "./routes/editor";
 import { registerNotes } from "./routes/notes";
 import { registerPractice } from "./routes/practice";
+import { registerReviews } from "./routes/reviews";
 import { registerAttachments } from "./routes/attachments";
 import { WriteCoordinator, WriteError } from "./vault/writes";
 import Fastify, { type FastifyInstance } from "fastify";
@@ -53,6 +54,7 @@ export async function createApp(config: Config, dev = false) {
   registerEditor(ctx, writer);
   registerNotes(ctx, writer);
   registerPractice(ctx);
+  registerReviews(ctx);
   registerAttachments(ctx);
   registerChangesets(ctx, writer);
   registerSessions(ctx);

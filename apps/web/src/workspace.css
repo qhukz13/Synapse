@@ -704,6 +704,9 @@ summary small {
 .dash-activity {
   grid-column: span 7;
 }
+.dash-reviews {
+  grid-column: span 12;
+}
 .dash-today,
 .dash-resources,
 .dash-study,
@@ -1347,6 +1350,64 @@ summary small {
   font: 0.82rem/1.55 var(--font-code);
   white-space: pre;
 }
+.review-queue-list,
+.review-history ul {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.review-queue-list li,
+.review-history li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border-1);
+}
+.review-queue-list li > div:first-child,
+.review-history li {
+  min-width: 0;
+}
+.review-queue-list small,
+.review-history small {
+  display: block;
+  margin-top: 3px;
+  color: var(--fg-3);
+  overflow-wrap: anywhere;
+}
+.review-queue-list li > div:last-child {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+.review-history li {
+  display: grid;
+  justify-content: initial;
+  gap: 2px;
+}
+.topic-review-action {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0;
+}
+.topic-review-action label {
+  display: grid;
+  gap: 4px;
+  color: var(--fg-3);
+  font-size: 0.8rem;
+}
+.topic-review-action input {
+  max-width: 180px;
+}
+.topic-review-action small {
+  flex-basis: 100%;
+  color: var(--fg-2);
+}
 .topic-attachment-list li:has(.attachment-relink-candidates) {
   flex-wrap: wrap;
 }
@@ -1803,6 +1864,7 @@ summary small {
     grid-column: span 1;
   }
   .dash-continue,
+  .dash-reviews,
   .dash-next,
   .dash-progress,
   .dash-activity {
@@ -1840,6 +1902,7 @@ summary small {
   }
   .dashboard-panel,
   .dash-continue,
+  .dash-reviews,
   .dash-next,
   .dash-progress,
   .dash-activity,
