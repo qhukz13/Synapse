@@ -174,6 +174,39 @@ test("links and removes a reference attachment without deleting the vault file",
   expect(original.status()).toBe(200);
 });
 
+test("imports a managed copy and keeps the source file intact", async ({
+  page,
+}) => {
+  await page.goto("/t/machine-learning");
+  const attachments = page.locator(".topic-attachments");
+  await attachments.locator("summary").click();
+  await attachments
+    .getByLabel("Import a copy into Synapse")
+    .setInputFiles(
+      "packages/core/test/fixtures/vault/15 - Notebooks/calibration.csv",
+    );
+  await expect(attachments).toContainText("Copy · csv · ok");
+  await expect(attachments).toContainText("Stored in Synapse application data");
+  const open = attachments.getByRole("link", { name: "Open calibration.csv" });
+  const contentUrl = await open.getAttribute("href");
+  expect(contentUrl).not.toBeNull();
+  const downloaded = await page.request.get(contentUrl!);
+  expect(downloaded.status()).toBe(200);
+  expect(await downloaded.text()).toContain("voltage,temperature");
+  page.once("dialog", (dialog) => dialog.accept());
+  await attachments
+    .getByRole("button", { name: "Remove calibration.csv" })
+    .click();
+  await expect(attachments).toContainText(
+    "No files are attached to this item.",
+  );
+  const source = await page.request.get(
+    "/api/files/15%20-%20Notebooks/calibration.csv",
+  );
+  expect(source.status()).toBe(200);
+  expect(await source.text()).toContain("voltage,temperature");
+});
+
 test("quick-captures, moves, renames and trashes a personal note", async ({
   page,
 }, testInfo) => {

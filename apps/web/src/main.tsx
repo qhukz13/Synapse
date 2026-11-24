@@ -2375,6 +2375,7 @@ function TopicAttachments({ owner }: { owner: string }) {
   const [rootId, setRootId] = useState("vault");
   const [path, setPath] = useState("");
   const [error, setError] = useState("");
+  const [uploading, setUploading] = useState(false);
   const browse = query<BrowseResult>(
     `attachments/browse?root=${encodeURIComponent(rootId)}&path=${encodeURIComponent(path)}`,
     !!rootId,
@@ -2427,6 +2428,34 @@ function TopicAttachments({ owner }: { owner: string }) {
       );
     }
   };
+  const upload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setError("");
+    try {
+      const body = new FormData();
+      body.append("file", file, file.name);
+      const response = await fetch(
+        `/api/attachments/upload?owner=${encodeURIComponent(owner)}`,
+        { method: "POST", headers: { "x-synapse": "1" }, body },
+      );
+      const result = await response.json();
+      if (!response.ok)
+        throw Error(result.message ?? "Could not import this file.");
+      await client.invalidateQueries({
+        queryKey: [`attachments?owner=${encodeURIComponent(owner)}`],
+      });
+      input.value = "";
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not import this file.",
+      );
+    } finally {
+      setUploading(false);
+    }
+  };
   const rootPath = (rootId: string) =>
     roots.data?.find((root) => root.id === rootId)?.path ?? rootId;
   return (
@@ -2454,6 +2483,9 @@ function TopicAttachments({ owner }: { owner: string }) {
                   <small>
                     {rootPath(attachment.root_id ?? "")}/{attachment.rel_path}
                   </small>
+                )}
+                {attachment.mode === "managed" && (
+                  <small>Stored in Synapse application data</small>
                 )}
               </div>
               <div className="topic-attachment-actions">
@@ -2539,6 +2571,16 @@ function TopicAttachments({ owner }: { owner: string }) {
           </ul>
         )}
       </div>
+      <label className="attachment-upload">
+        {uploading ? "Importing copy…" : "Import a copy into Synapse"}
+        <input
+          type="file"
+          aria-label="Import a copy into Synapse"
+          accept=".pdf,.ipynb,.csv,.tsv,.png,.jpg,.jpeg,.gif,.webp,.svg,.py,.js,.ts,.json,.yaml,.yml,.toml,.txt,.sh,.sql,.c,.cpp,.rs,.go,.java,.r,.jl,.md,.zip"
+          disabled={uploading}
+          onChange={(event) => void upload(event)}
+        />
+      </label>
       {error && <p role="alert">{error}</p>}
     </details>
   );

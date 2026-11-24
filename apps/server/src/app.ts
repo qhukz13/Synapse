@@ -6,6 +6,7 @@ import { registerAttachments } from "./routes/attachments";
 import { WriteCoordinator, WriteError } from "./vault/writes";
 import Fastify, { type FastifyInstance } from "fastify";
 import staticFiles from "@fastify/static";
+import multipart from "@fastify/multipart";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
@@ -24,6 +25,9 @@ export function httpError(statusCode: number, message: string) {
 export async function createApp(config: Config, dev = false) {
   const app = Fastify({ logger: false, bodyLimit: 8 * 1024 * 1024 });
   secure(app, config, dev);
+  await app.register(multipart, {
+    limits: { fileSize: config.attachments.maxUploadBytes, files: 1, parts: 1 },
+  });
   const state = openState(config);
   let nids = new Map<string, string>();
   const work = new Workspace(config, (idx, files, origin) => {
