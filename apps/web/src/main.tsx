@@ -2367,6 +2367,12 @@ type BrowseResult = {
     size: number | null;
   }[];
 };
+type RelinkCandidate = {
+  rootId: string;
+  relPath: string;
+  displayName: string;
+  size: number;
+};
 function TopicAttachments({ owner }: { owner: string }) {
   const attachments = query<AttachmentRow[]>(
     `attachments?owner=${encodeURIComponent(owner)}`,
@@ -2376,6 +2382,21 @@ function TopicAttachments({ owner }: { owner: string }) {
   const [path, setPath] = useState("");
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [relinkId, setRelinkId] = useState("");
+  const candidates = useQuery<RelinkCandidate[]>({
+    queryKey: ["attachment-relink-candidates", relinkId],
+    enabled: !!relinkId,
+    queryFn: async ({ signal }) => {
+      const response = await fetch(
+        `/api/attachments/${encodeURIComponent(relinkId)}/relink-candidates`,
+        { signal },
+      );
+      const result = await response.json();
+      if (!response.ok)
+        throw Error(result.message ?? "Could not search for this file.");
+      return result as RelinkCandidate[];
+    },
+  });
   const browse = query<BrowseResult>(
     `attachments/browse?root=${encodeURIComponent(rootId)}&path=${encodeURIComponent(path)}`,
     !!rootId,
@@ -2456,6 +2477,41 @@ function TopicAttachments({ owner }: { owner: string }) {
       setUploading(false);
     }
   };
+  const relink = async (
+    attachment: AttachmentRow,
+    candidate: RelinkCandidate,
+  ) => {
+    if (
+      !window.confirm(
+        `Relink “${attachment.display_name}” to ${candidate.rootId}/${candidate.relPath}? Synapse verified that the file contents match.`,
+      )
+    )
+      return;
+    setError("");
+    try {
+      const response = await fetch(
+        `/api/attachments/${encodeURIComponent(attachment.id)}/relink`,
+        {
+          method: "POST",
+          headers: { "x-synapse": "1", "content-type": "application/json" },
+          body: JSON.stringify({
+            rootId: candidate.rootId,
+            relPath: candidate.relPath,
+          }),
+        },
+      );
+      const result = await response.json();
+      if (!response.ok) throw Error(result.message ?? "Could not relink file.");
+      await client.invalidateQueries({
+        queryKey: [`attachments?owner=${encodeURIComponent(owner)}`],
+      });
+      setRelinkId("");
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not relink file.",
+      );
+    }
+  };
   const rootPath = (rootId: string) =>
     roots.data?.find((root) => root.id === rootId)?.path ?? rootId;
   return (
@@ -2489,7 +2545,7 @@ function TopicAttachments({ owner }: { owner: string }) {
                 )}
               </div>
               <div className="topic-attachment-actions">
-                {attachment.availability === "ok" && (
+                {attachment.availability !== "missing" && (
                   <a
                     href={`/api/attachments/${encodeURIComponent(attachment.id)}/content`}
                     target="_blank"
@@ -2499,6 +2555,16 @@ function TopicAttachments({ owner }: { owner: string }) {
                     <ExternalLink size={15} />
                   </a>
                 )}
+                {attachment.mode === "reference" &&
+                  attachment.availability === "missing" && (
+                    <button
+                      type="button"
+                      aria-label={`Find ${attachment.display_name}`}
+                      onClick={() => setRelinkId(attachment.id)}
+                    >
+                      Find it
+                    </button>
+                  )}
                 <button
                   type="button"
                   aria-label={`Remove ${attachment.display_name}`}
@@ -2507,6 +2573,38 @@ function TopicAttachments({ owner }: { owner: string }) {
                   <Trash2 size={15} />
                 </button>
               </div>
+              {relinkId === attachment.id && (
+                <div
+                  className="attachment-relink-candidates"
+                  aria-label={`Relink candidates for ${attachment.display_name}`}
+                >
+                  {candidates.isLoading ? (
+                    <p role="status">Searching approved locations…</p>
+                  ) : candidates.error ? (
+                    <p role="alert">{candidates.error.message}</p>
+                  ) : candidates.data?.length ? (
+                    <ul>
+                      {candidates.data.map((candidate) => (
+                        <li key={`${candidate.rootId}/${candidate.relPath}`}>
+                          <button
+                            type="button"
+                            onClick={() => void relink(attachment, candidate)}
+                          >
+                            Relink to {candidate.rootId}/{candidate.relPath}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p>
+                      No exact content matches were found in approved locations.
+                    </p>
+                  )}
+                  <button type="button" onClick={() => setRelinkId("")}>
+                    Close
+                  </button>
+                </div>
+              )}
             </li>
           ))}
         </ul>

@@ -1286,6 +1286,27 @@ summary small {
   justify-content: center;
   padding: 6px;
 }
+.topic-attachment-list li:has(.attachment-relink-candidates) {
+  flex-wrap: wrap;
+}
+.attachment-relink-candidates {
+  flex-basis: 100%;
+  padding: 10px;
+  border: 1px solid var(--border-1);
+  border-radius: 7px;
+  background: var(--bg-1);
+}
+.attachment-relink-candidates ul {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+.attachment-relink-candidates button {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
 .attachment-browser {
   margin-top: 14px;
   padding: 12px;

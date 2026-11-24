@@ -140,6 +140,7 @@ export function registerAttachments({
       rows.map(async (row) => {
         let availability = row.availability;
         if (row.mode === "reference") {
+          let file: Awaited<ReturnType<typeof safeFile>> | undefined;
           try {
             const root = rootById(String(row.root_id));
             if (root.kind === "managed")
@@ -147,13 +148,39 @@ export function registerAttachments({
                 404,
                 "Managed attachment content is unavailable",
               );
-            const file = await safeFile(root.path, String(row.rel_path));
-            await file.close();
-            availability = "ok";
+            file = await safeFile(root.path, String(row.rel_path));
+            availability = row.availability === "relinked" ? "relinked" : "ok";
           } catch {
             availability = "missing";
           }
-          if (availability !== row.availability) {
+          if (file) {
+            try {
+              const checkedAt = Number(row.last_verified_at ?? 0);
+              if (
+                !row.sha256 ||
+                availability !== row.availability ||
+                Date.now() - checkedAt >= 24 * 60 * 60 * 1000
+              ) {
+                const fingerprint = await fingerprintFile(file);
+                state.db
+                  .prepare(
+                    "UPDATE attachment SET availability=?,size=?,sha256=?,last_verified_at=? WHERE id=?",
+                  )
+                  .run(
+                    String(availability),
+                    fingerprint.size,
+                    fingerprint.sha256,
+                    Date.now(),
+                    String(row.id),
+                  );
+                row.size = fingerprint.size;
+                row.sha256 = fingerprint.sha256;
+                row.last_verified_at = Date.now();
+              }
+            } finally {
+              await file.close();
+            }
+          } else if (availability !== row.availability) {
             state.db
               .prepare(
                 "UPDATE attachment SET availability=?,last_verified_at=? WHERE id=?",
@@ -203,9 +230,9 @@ export function registerAttachments({
       throw unavailable(422, "Managed copies are not available yet");
     assertRelative(body.relPath);
     const file = await safeFile(root.path, body.relPath);
-    let size: number;
+    let fingerprint: { size: number; sha256: string };
     try {
-      size = (await file.stat()).size;
+      fingerprint = await fingerprintFile(file);
     } finally {
       await file.close();
     }
@@ -224,8 +251,8 @@ export function registerAttachments({
     try {
       state.db
         .prepare(
-          `INSERT INTO attachment(id,owner_nid,mode,root_id,rel_path,display_name,original_name,file_kind,mime,size,availability,last_verified_at,created_at,note)
-        VALUES(?,?,'reference',?,?,?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO attachment(id,owner_nid,mode,root_id,rel_path,display_name,original_name,file_kind,mime,size,sha256,availability,last_verified_at,created_at,note)
+        VALUES(?,?,'reference',?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
           id,
@@ -240,7 +267,8 @@ export function registerAttachments({
             : ext === ".ipynb"
               ? "application/json"
               : null,
-          size,
+          fingerprint.size,
+          fingerprint.sha256,
           "ok",
           Date.now(),
           Date.now(),
@@ -255,6 +283,131 @@ export function registerAttachments({
       .prepare(`SELECT ${attachmentFields} FROM attachment WHERE id=?`)
       .get(id);
   });
+
+  app.get<{ Params: { id: string } }>(
+    "/api/attachments/:id/relink-candidates",
+    async (request) => {
+      const attachment = state.db
+        .prepare("SELECT mode,size,sha256 FROM attachment WHERE id=?")
+        .get(request.params.id) as
+        | { mode: string; size: number | null; sha256: string | null }
+        | undefined;
+      if (!attachment) throw unavailable(404, "Attachment not found");
+      if (attachment.mode !== "reference")
+        throw unavailable(422, "Only file references can be relinked");
+      if (attachment.size === null || !attachment.sha256)
+        throw unavailable(409, "The attachment identity has not been verified");
+      const candidates: {
+        rootId: string;
+        relPath: string;
+        displayName: string;
+        size: number;
+      }[] = [];
+      for (const root of roots().filter((item) => item.kind === "reference")) {
+        const base = await realpath(root.path).catch(() => null);
+        if (!base) continue;
+        const walk = async (prefix: string): Promise<void> => {
+          if (candidates.length >= 100) return;
+          const directory = prefix ? join(base, prefix) : base;
+          if ((await realpath(directory).catch(() => null)) !== directory)
+            return;
+          const entries = await readdir(directory, {
+            withFileTypes: true,
+          }).catch(() => []);
+          for (const entry of entries) {
+            if (candidates.length >= 100) return;
+            if (isIgnored(entry.name) || entry.isSymbolicLink()) continue;
+            const relPath = prefix ? `${prefix}/${entry.name}` : entry.name;
+            if (entry.isDirectory()) {
+              await walk(relPath);
+              continue;
+            }
+            if (
+              !entry.isFile() ||
+              !attachmentExtensions.has(extname(entry.name).toLowerCase())
+            )
+              continue;
+            let file: Awaited<ReturnType<typeof safeFile>> | undefined;
+            try {
+              file = await safeFile(base, relPath);
+              if ((await file.stat()).size !== attachment.size) continue;
+              const fingerprint = await fingerprintFile(file);
+              if (fingerprint.sha256 === attachment.sha256)
+                candidates.push({
+                  rootId: root.id,
+                  relPath,
+                  displayName: entry.name,
+                  size: fingerprint.size,
+                });
+            } catch {
+              // Files may move while the approved roots are being scanned.
+            } finally {
+              await file?.close();
+            }
+          }
+        };
+        await walk("");
+      }
+      return candidates;
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/api/attachments/:id/relink",
+    async (request) => {
+      const body = z
+        .object({ rootId: z.string().min(1), relPath: z.string().min(1) })
+        .strict()
+        .parse(request.body);
+      const attachment = state.db
+        .prepare("SELECT mode,owner_nid,size,sha256 FROM attachment WHERE id=?")
+        .get(request.params.id) as
+        | {
+            mode: string;
+            owner_nid: string;
+            size: number | null;
+            sha256: string | null;
+          }
+        | undefined;
+      if (!attachment) throw unavailable(404, "Attachment not found");
+      if (attachment.mode !== "reference")
+        throw unavailable(422, "Only file references can be relinked");
+      const root = rootById(body.rootId);
+      if (root.kind !== "reference")
+        throw unavailable(403, "Managed storage cannot be a reference root");
+      assertRelative(body.relPath);
+      const file = await safeFile(root.path, body.relPath);
+      let fingerprint: { size: number; sha256: string };
+      try {
+        fingerprint = await fingerprintFile(file);
+      } finally {
+        await file.close();
+      }
+      if (
+        fingerprint.size !== attachment.size ||
+        fingerprint.sha256 !== attachment.sha256
+      )
+        throw unavailable(
+          409,
+          "The selected file does not match this attachment",
+        );
+      const collision = state.db
+        .prepare(
+          "SELECT id FROM attachment WHERE id<>? AND owner_nid=? AND mode='reference' AND root_id=? AND rel_path=?",
+        )
+        .get(request.params.id, attachment.owner_nid, root.id, body.relPath);
+      if (collision)
+        throw unavailable(409, "This file is already attached to this item");
+      state.db
+        .prepare(
+          "UPDATE attachment SET root_id=?,rel_path=?,availability='relinked',last_verified_at=? WHERE id=?",
+        )
+        .run(root.id, body.relPath, Date.now(), request.params.id);
+      return state.db
+        .prepare(`SELECT ${attachmentFields} FROM attachment WHERE id=?`)
+        .get(request.params.id);
+    },
+  );
 
   app.post(
     "/api/attachments/upload",
@@ -500,4 +653,12 @@ export function registerAttachments({
 function within(root: string, target: string) {
   const path = relative(root, target);
   return !isAbsolute(path) && path !== ".." && !path.startsWith(".." + sep);
+}
+
+async function fingerprintFile(file: Awaited<ReturnType<typeof safeFile>>) {
+  const size = (await file.stat()).size;
+  const digest = createHash("sha256");
+  for await (const chunk of file.createReadStream({ autoClose: false }))
+    digest.update(chunk);
+  return { size, sha256: digest.digest("hex") };
 }

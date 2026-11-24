@@ -8,6 +8,7 @@ import {
   writeFile,
   symlink,
   readdir,
+  rename,
 } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -258,6 +259,89 @@ it("rejects unapproved roots and symlinked files without exposing them", async (
     },
   });
   expect(cannotAddRoot.statusCode).toBe(422);
+});
+
+it("finds and confirms a content-matched relink after a referenced file moves", async () => {
+  const { app, outside } = await setup({ extraRoot: true });
+  const headers = { host: "127.0.0.1:4317" };
+  const mutation = {
+    ...headers,
+    origin: "http://127.0.0.1:4317",
+    "x-synapse": "1",
+    "content-type": "application/json",
+  };
+  const created = await app.app.inject({
+    method: "POST",
+    url: "/api/attachments",
+    headers: mutation,
+    payload: {
+      owner: "machine-learning",
+      mode: "reference",
+      rootId: "docs",
+      relPath: "reference.pdf",
+    },
+  });
+  expect(created.statusCode).toBe(200);
+  const id = created.json().id as string;
+  const original = await readFile(join(outside, "reference.pdf"));
+  await rename(join(outside, "reference.pdf"), join(outside, "moved.pdf"));
+  await writeFile(
+    join(outside, "decoy.pdf"),
+    Buffer.alloc(original.length, 120),
+  );
+
+  const listed = await app.app.inject({
+    url: "/api/attachments?owner=machine-learning",
+    headers,
+  });
+  expect(
+    listed.json().find((row: { id: string }) => row.id === id).availability,
+  ).toBe("missing");
+  const candidates = await app.app.inject({
+    url: `/api/attachments/${id}/relink-candidates`,
+    headers,
+  });
+  expect(candidates.statusCode).toBe(200);
+  expect(candidates.json()).toEqual([
+    {
+      rootId: "docs",
+      relPath: "moved.pdf",
+      displayName: "moved.pdf",
+      size: original.length,
+    },
+  ]);
+  const mismatch = await app.app.inject({
+    method: "POST",
+    url: `/api/attachments/${id}/relink`,
+    headers: mutation,
+    payload: { rootId: "docs", relPath: "decoy.pdf" },
+  });
+  expect(mismatch.statusCode).toBe(409);
+  const relinked = await app.app.inject({
+    method: "POST",
+    url: `/api/attachments/${id}/relink`,
+    headers: mutation,
+    payload: { rootId: "docs", relPath: "moved.pdf" },
+  });
+  expect(relinked.statusCode).toBe(200);
+  expect(relinked.json()).toMatchObject({
+    rel_path: "moved.pdf",
+    availability: "relinked",
+    sha256: created.json().sha256,
+  });
+  const verifiedAgain = await app.app.inject({
+    url: "/api/attachments?owner=machine-learning",
+    headers,
+  });
+  expect(
+    verifiedAgain.json().find((row: { id: string }) => row.id === id)
+      .availability,
+  ).toBe("relinked");
+  const content = await app.app.inject({
+    url: `/api/attachments/${id}/content`,
+    headers,
+  });
+  expect(content.body).toBe(original.toString());
 });
 
 it("streams managed uploads, deduplicates content and retains shared blobs", async () => {

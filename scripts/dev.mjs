@@ -23,6 +23,7 @@ if (testDirectory) {
       allowVaultWrites: true,
     }),
   );
+  await writeFile(join(tmpdir(), "synapse-browser-active-vault"), vaultPath);
 } else {
   await prepareSample();
 }

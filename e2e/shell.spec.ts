@@ -1,4 +1,19 @@
 import { test, expect } from "@playwright/test";
+import { readFile, rename, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+async function isolatedBrowserVault() {
+  try {
+    return await readFile(
+      join(tmpdir(), "synapse-browser-active-vault"),
+      "utf8",
+    );
+  } catch {
+    throw new Error("The isolated Playwright fixture vault was not found.");
+  }
+}
+
 test("creates, autosaves and searches a scoped personal note", async ({
   page,
   context,
@@ -144,14 +159,22 @@ test("tracks project steps and suggests status without changing it", async ({
 
 test("links and removes a reference attachment without deleting the vault file", async ({
   page,
-}) => {
+}, testInfo) => {
+  const vault = await isolatedBrowserVault();
+  const filename = `reference-${Date.now()}-${testInfo.project.name}.csv`;
+  await writeFile(
+    join(vault, "15 - Notebooks", filename),
+    `voltage,temperature\n3.3,22.1\n# ${filename}\n`,
+  );
   await page.goto("/t/machine-learning");
   const attachments = page.locator(".topic-attachments");
   await attachments.locator("summary").click();
   await attachments.getByRole("button", { name: /15 - Notebooks/ }).click();
-  await attachments.getByRole("button", { name: /calibration\.csv/ }).click();
+  await attachments
+    .getByRole("button", { name: new RegExp(`^${filename} ·`) })
+    .click();
   await expect(attachments).toContainText("Reference · csv · ok");
-  const open = attachments.getByRole("link", { name: "Open calibration.csv" });
+  const open = attachments.getByRole("link", { name: `Open ${filename}` });
   await expect(open).toHaveAttribute(
     "href",
     /\/api\/attachments\/.+\/content$/,
@@ -162,12 +185,8 @@ test("links and removes a reference attachment without deleting the vault file",
   expect(content.status()).toBe(200);
   expect(await content.text()).toContain("voltage,temperature");
   page.once("dialog", (dialog) => dialog.accept());
-  await attachments
-    .getByRole("button", { name: "Remove calibration.csv" })
-    .click();
-  await expect(attachments).toContainText(
-    "No files are attached to this item.",
-  );
+  await attachments.getByRole("button", { name: `Remove ${filename}` }).click();
+  await expect(attachments.locator(".topic-attachment-list li")).toHaveCount(0);
   const original = await page.request.get(
     "/api/files/15%20-%20Notebooks/calibration.csv",
   );
@@ -197,14 +216,54 @@ test("imports a managed copy and keeps the source file intact", async ({
   await attachments
     .getByRole("button", { name: "Remove calibration.csv" })
     .click();
-  await expect(attachments).toContainText(
-    "No files are attached to this item.",
-  );
+  await expect(attachments.locator(".topic-attachment-list li")).toHaveCount(0);
   const source = await page.request.get(
     "/api/files/15%20-%20Notebooks/calibration.csv",
   );
   expect(source.status()).toBe(200);
   expect(await source.text()).toContain("voltage,temperature");
+});
+
+test("finds and confirms a moved attachment reference", async ({
+  page,
+}, testInfo) => {
+  const vault = await isolatedBrowserVault();
+  const filename = `relink-${Date.now()}-${testInfo.project.name}.csv`;
+  const movedFilename = `relinked-${Date.now()}-${testInfo.project.name}.csv`;
+  await writeFile(
+    join(vault, "15 - Notebooks", filename),
+    `voltage,temperature\n3.3,22.1\n# ${filename}\n`,
+  );
+  await page.goto("/t/machine-learning");
+  const attachments = page.locator(".topic-attachments");
+  await attachments.locator("summary").click();
+  await attachments.getByRole("button", { name: /15 - Notebooks/ }).click();
+  await attachments
+    .getByRole("button", { name: new RegExp(`^${filename} ·`) })
+    .click();
+  const oldPath = join(vault, "15 - Notebooks", filename);
+  const movedPath = join(vault, "15 - Notebooks", movedFilename);
+  await rename(oldPath, movedPath);
+
+  await page.reload();
+  const relinkPanel = page.locator(".topic-attachments");
+  await relinkPanel.locator("summary").click();
+  await expect(relinkPanel).toContainText("Reference · csv · missing");
+  await relinkPanel.getByRole("button", { name: `Find ${filename}` }).click();
+  const candidate = relinkPanel.getByRole("button", {
+    name: `Relink to vault/15 - Notebooks/${movedFilename}`,
+  });
+  await expect(candidate).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept());
+  await candidate.click();
+  await expect(relinkPanel).toContainText("Reference · csv · relinked");
+  const open = relinkPanel.getByRole("link", { name: `Open ${filename}` });
+  const href = await open.getAttribute("href");
+  expect(href).not.toBeNull();
+  expect((await page.request.get(href!)).status()).toBe(200);
+  page.once("dialog", (dialog) => dialog.accept());
+  await relinkPanel.getByRole("button", { name: `Remove ${filename}` }).click();
+  await expect(relinkPanel.locator(".topic-attachment-list li")).toHaveCount(0);
 });
 
 test("quick-captures, moves, renames and trashes a personal note", async ({
