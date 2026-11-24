@@ -91,8 +91,20 @@ export function within(parent: string, child: string) {
 }
 export function configFrom(input: unknown) {
   const c = configSchema.parse(input);
+  const rootIds = c.attachments.extraRoots.map((root) => root.id);
+  if (
+    new Set(rootIds).size !== rootIds.length ||
+    rootIds.some((id) => id === "vault" || id === "managed")
+  )
+    throw Error(
+      "Attachment root ids must be unique and cannot use reserved ids",
+    );
   c.vaultPath = canonical(expand(c.vaultPath));
   c.dataDir = canonical(expand(c.dataDir));
+  c.attachments.extraRoots = c.attachments.extraRoots.map((root) => ({
+    ...root,
+    path: canonical(expand(root.path)),
+  }));
   if (within(c.vaultPath, c.dataDir) || within(c.dataDir, c.vaultPath))
     throw Error("Vault and application data must be separate directories");
   return c;

@@ -1242,6 +1242,94 @@ summary small {
   margin: 0.8rem 0;
   padding-left: 1.6rem;
 }
+.topic-attachments {
+  border-bottom: 1px solid var(--border-1);
+  padding: 10px 0;
+}
+.topic-attachment-list,
+.attachment-browser ul {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+}
+.topic-attachment-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border-1);
+}
+.topic-attachment-list li > div:first-child {
+  display: grid;
+  min-width: 0;
+}
+.topic-attachment-list strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+.topic-attachment-list small {
+  overflow-wrap: anywhere;
+}
+.topic-attachment-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+.topic-attachment-actions a,
+.topic-attachment-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+}
+.attachment-browser {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--border-1);
+  border-radius: 8px;
+  background: var(--bg-1);
+}
+.attachment-browser h3,
+.attachment-browser p {
+  margin: 0 0 8px;
+}
+.attachment-browser label {
+  display: grid;
+  gap: 4px;
+  color: var(--fg-3);
+}
+.attachment-browser select {
+  max-width: 100%;
+  background: var(--bg-2);
+  color: var(--fg-1);
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  padding: 8px;
+  font: inherit;
+}
+.attachment-browser-path {
+  color: var(--fg-3);
+  font-family: var(--font-code);
+  font-size: 0.76rem;
+  overflow-wrap: anywhere;
+}
+.attachment-browser ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr));
+  gap: 6px;
+  max-height: 280px;
+  overflow: auto;
+}
+.attachment-browser li button {
+  width: 100%;
+  height: 100%;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
 .practice-list li > label {
   display: flex;
   align-items: flex-start;

@@ -28,6 +28,9 @@ import {
   BookmarkCheck,
   ArrowRight,
   FileText,
+  Paperclip,
+  ExternalLink,
+  Trash2,
 } from "lucide-react";
 import type { Catalogue, TopicRow } from "@synapse/core/view";
 import type { Issue, Topic } from "@synapse/core";
@@ -2336,6 +2339,216 @@ function PracticePanel({
     </details>
   );
 }
+
+type AttachmentRow = {
+  id: string;
+  mode: "reference" | "managed";
+  root_id: string | null;
+  rel_path: string | null;
+  display_name: string;
+  file_kind: string;
+  size: number | null;
+  availability: string;
+};
+type AttachmentRoot = {
+  id: string;
+  kind: "reference" | "managed";
+  path: string;
+  access: "reference" | "copy";
+};
+type BrowseResult = {
+  root: string;
+  path: string;
+  parent: string | null;
+  items: {
+    name: string;
+    path: string;
+    kind: "directory" | "file";
+    size: number | null;
+  }[];
+};
+function TopicAttachments({ owner }: { owner: string }) {
+  const attachments = query<AttachmentRow[]>(
+    `attachments?owner=${encodeURIComponent(owner)}`,
+  );
+  const roots = query<AttachmentRoot[]>("attachments/roots");
+  const [rootId, setRootId] = useState("vault");
+  const [path, setPath] = useState("");
+  const [error, setError] = useState("");
+  const browse = query<BrowseResult>(
+    `attachments/browse?root=${encodeURIComponent(rootId)}&path=${encodeURIComponent(path)}`,
+    !!rootId,
+  );
+  const attach = async (relPath: string) => {
+    setError("");
+    try {
+      const response = await fetch("/api/attachments", {
+        method: "POST",
+        headers: { "x-synapse": "1", "content-type": "application/json" },
+        body: JSON.stringify({ owner, mode: "reference", rootId, relPath }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw Error(result.message ?? "Could not attach file.");
+      await client.invalidateQueries({
+        queryKey: [`attachments?owner=${encodeURIComponent(owner)}`],
+      });
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not attach file.",
+      );
+    }
+  };
+  const remove = async (attachment: AttachmentRow) => {
+    if (
+      !window.confirm(
+        `Remove the ${attachment.mode} reference to “${attachment.display_name}”? The original file will stay where it is.`,
+      )
+    )
+      return;
+    try {
+      const response = await fetch(
+        `/api/attachments/${encodeURIComponent(attachment.id)}`,
+        {
+          method: "DELETE",
+          headers: { "x-synapse": "1", "content-type": "application/json" },
+          body: "{}",
+        },
+      );
+      if (!response.ok)
+        throw Error("Could not remove this attachment reference.");
+      await client.invalidateQueries({
+        queryKey: [`attachments?owner=${encodeURIComponent(owner)}`],
+      });
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not remove this attachment.",
+      );
+    }
+  };
+  const rootPath = (rootId: string) =>
+    roots.data?.find((root) => root.id === rootId)?.path ?? rootId;
+  return (
+    <details className="topic-attachments">
+      <summary>Attachments ({attachments.data?.length ?? 0})</summary>
+      {attachments.error ? (
+        <p role="alert">{attachments.error.message}</p>
+      ) : null}
+      {attachments.data?.length ? (
+        <ul className="topic-attachment-list">
+          {attachments.data.map((attachment) => (
+            <li key={attachment.id}>
+              <div>
+                <strong>
+                  <Paperclip size={14} /> {attachment.display_name}
+                </strong>
+                <small>
+                  {attachment.mode === "reference" ? "Reference" : "Copy"} ·{" "}
+                  {attachment.file_kind} · {attachment.availability}
+                  {attachment.size !== null
+                    ? ` · ${formatBytes(attachment.size)}`
+                    : ""}
+                </small>
+                {attachment.rel_path && (
+                  <small>
+                    {rootPath(attachment.root_id ?? "")}/{attachment.rel_path}
+                  </small>
+                )}
+              </div>
+              <div className="topic-attachment-actions">
+                {attachment.availability === "ok" && (
+                  <a
+                    href={`/api/attachments/${encodeURIComponent(attachment.id)}/content`}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={`Open ${attachment.display_name}`}
+                  >
+                    <ExternalLink size={15} />
+                  </a>
+                )}
+                <button
+                  type="button"
+                  aria-label={`Remove ${attachment.display_name}`}
+                  onClick={() => void remove(attachment)}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p>No files are attached to this item.</p>
+      )}
+      <div className="attachment-browser">
+        <h3>Link an existing file</h3>
+        <label>
+          Approved location
+          <select
+            value={rootId}
+            onChange={(event) => {
+              setRootId(event.target.value);
+              setPath("");
+            }}
+          >
+            {(roots.data ?? [])
+              .filter((root) => root.kind === "reference")
+              .map((root) => (
+                <option key={root.id} value={root.id}>
+                  {root.id} · {root.path}
+                </option>
+              ))}
+          </select>
+        </label>
+        <p className="attachment-browser-path">
+          {rootId}
+          {path ? `/${path}` : ""}
+        </p>
+        {browse.isLoading ? (
+          <p role="status">Loading files…</p>
+        ) : browse.error ? (
+          <p role="alert">{browse.error.message}</p>
+        ) : (
+          <ul>
+            {browse.data?.parent !== null &&
+              browse.data?.parent !== undefined && (
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => setPath(browse.data!.parent!)}
+                  >
+                    Up one folder
+                  </button>
+                </li>
+              )}
+            {browse.data?.items.map((item) => (
+              <li key={item.path}>
+                {item.kind === "directory" ? (
+                  <button type="button" onClick={() => setPath(item.path)}>
+                    {item.name}/
+                  </button>
+                ) : (
+                  <button type="button" onClick={() => void attach(item.path)}>
+                    {item.name}
+                    {item.size !== null ? ` · ${formatBytes(item.size)}` : ""}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {error && <p role="alert">{error}</p>}
+    </details>
+  );
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 function Reader() {
   const { slug } = useParams({ from: "/t/$slug" }),
     data = summary(),
@@ -2496,6 +2709,7 @@ function Reader() {
           <p>This note lists no resources.</p>
         )}
       </details>
+      {n.kind !== "note" && <TopicAttachments owner={slug} />}
       {n.kind !== "note" && (
         <details>
           <summary>Personal notes ({personalNotes.data?.length ?? 0})</summary>

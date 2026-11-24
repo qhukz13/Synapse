@@ -142,6 +142,38 @@ test("tracks project steps and suggests status without changing it", async ({
   await expect(project).toContainText("not started");
 });
 
+test("links and removes a reference attachment without deleting the vault file", async ({
+  page,
+}) => {
+  await page.goto("/t/machine-learning");
+  const attachments = page.locator(".topic-attachments");
+  await attachments.locator("summary").click();
+  await attachments.getByRole("button", { name: /15 - Notebooks/ }).click();
+  await attachments.getByRole("button", { name: /calibration\.csv/ }).click();
+  await expect(attachments).toContainText("Reference · csv · ok");
+  const open = attachments.getByRole("link", { name: "Open calibration.csv" });
+  await expect(open).toHaveAttribute(
+    "href",
+    /\/api\/attachments\/.+\/content$/,
+  );
+  const contentHref = await open.getAttribute("href");
+  expect(contentHref).not.toBeNull();
+  const content = await page.request.get(contentHref!);
+  expect(content.status()).toBe(200);
+  expect(await content.text()).toContain("voltage,temperature");
+  page.once("dialog", (dialog) => dialog.accept());
+  await attachments
+    .getByRole("button", { name: "Remove calibration.csv" })
+    .click();
+  await expect(attachments).toContainText(
+    "No files are attached to this item.",
+  );
+  const original = await page.request.get(
+    "/api/files/15%20-%20Notebooks/calibration.csv",
+  );
+  expect(original.status()).toBe(200);
+});
+
 test("quick-captures, moves, renames and trashes a personal note", async ({
   page,
 }, testInfo) => {

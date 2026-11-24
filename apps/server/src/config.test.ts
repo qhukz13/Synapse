@@ -12,3 +12,20 @@ it("rejects writable application data inside the vault", () =>
   expect(() =>
     configFrom({ vaultPath: "/tmp/example", dataDir: "/tmp/example/state" }),
   ).toThrow(/separate/));
+it("reserves built-in attachment roots and rejects duplicate root ids", () => {
+  expect(() =>
+    configFrom({
+      attachments: { extraRoots: [{ id: "vault", path: "/tmp" }] },
+    }),
+  ).toThrow(/reserved ids/);
+  expect(() =>
+    configFrom({
+      attachments: {
+        extraRoots: [
+          { id: "docs", path: "/tmp/a" },
+          { id: "docs", path: "/tmp/b" },
+        ],
+      },
+    }),
+  ).toThrow(/unique/);
+});
