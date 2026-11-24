@@ -409,6 +409,210 @@ export function registerAttachments({
     },
   );
 
+  app.post<{ Params: { id: string } }>(
+    "/api/attachments/:id/copy",
+    async (request) => {
+      const attachment = state.db
+        .prepare(
+          "SELECT owner_nid,mode,root_id,rel_path,display_name,mime FROM attachment WHERE id=?",
+        )
+        .get(request.params.id) as
+        | {
+            owner_nid: string;
+            mode: string;
+            root_id: string | null;
+            rel_path: string | null;
+            display_name: string;
+            mime: string | null;
+          }
+        | undefined;
+      if (!attachment) throw unavailable(404, "Attachment not found");
+      if (
+        attachment.mode !== "reference" ||
+        !attachment.root_id ||
+        !attachment.rel_path
+      )
+        throw unavailable(422, "Only file references can be copied");
+      const name = Array.from(basename(attachment.display_name))
+        .filter((character) => {
+          const code = character.charCodeAt(0);
+          return code >= 32 && code !== 127;
+        })
+        .join("")
+        .trim();
+      const ext = extname(name).toLowerCase();
+      if (!name || !attachmentExtensions.has(ext))
+        throw unavailable(
+          422,
+          "This file type is not approved as an attachment",
+        );
+      const root = rootById(attachment.root_id);
+      if (root.kind !== "reference")
+        throw unavailable(403, "Managed storage cannot be a reference root");
+      const source = await safeFile(root.path, attachment.rel_path);
+      const initial = await source.stat();
+      if (initial.size > config.attachments.maxUploadBytes) {
+        await source.close();
+        throw unavailable(
+          413,
+          "The selected file exceeds the configured size limit",
+        );
+      }
+      const now = Date.now();
+      const attachmentRoot = join(config.dataDir, "attachments");
+      const tempDirectory = join(attachmentRoot, "tmp");
+      const blobRoot = join(attachmentRoot, "blobs");
+      await mkdir(tempDirectory, { recursive: true, mode: 0o700 });
+      await mkdir(blobRoot, { recursive: true, mode: 0o700 });
+      if (
+        (await realpath(tempDirectory)) !== tempDirectory ||
+        (await realpath(blobRoot)) !== blobRoot
+      ) {
+        await source.close();
+        throw unavailable(
+          403,
+          "Symlinks in managed attachment storage are unsupported",
+        );
+      }
+      const tempPath = join(tempDirectory, randomUUID());
+      const hasher = createHash("sha256");
+      let size = 0;
+      const meter = new Transform({
+        transform(chunk: Buffer, _encoding, callback) {
+          size += chunk.length;
+          if (size > config.attachments.maxUploadBytes) {
+            callback(
+              unavailable(
+                413,
+                "The selected file exceeds the configured size limit",
+              ),
+            );
+            return;
+          }
+          hasher.update(chunk);
+          callback(null, chunk);
+        },
+      });
+      try {
+        await pipeline(
+          source.createReadStream({ autoClose: false }),
+          meter,
+          createWriteStream(tempPath, { flags: "wx", mode: 0o600 }),
+        );
+      } catch (cause) {
+        await unlink(tempPath).catch(() => undefined);
+        throw cause;
+      } finally {
+        await source.close();
+      }
+      const sha256 = hasher.digest("hex");
+      if (
+        state.db
+          .prepare(
+            "SELECT id FROM attachment WHERE owner_nid=? AND mode='managed' AND blob_sha256=?",
+          )
+          .get(attachment.owner_nid, sha256)
+      ) {
+        await unlink(tempPath).catch(() => undefined);
+        throw unavailable(409, "This copy is already attached to this item");
+      }
+      const storedRel = join(
+        "attachments",
+        "blobs",
+        sha256.slice(0, 2),
+        sha256.slice(2, 4),
+        sha256,
+      );
+      const blobPath = join(config.dataDir, storedRel);
+      await mkdir(join(blobPath, ".."), { recursive: true, mode: 0o700 });
+      if ((await realpath(join(blobPath, ".."))) !== join(blobPath, "..")) {
+        await unlink(tempPath).catch(() => undefined);
+        throw unavailable(
+          403,
+          "Symlinks in managed attachment storage are unsupported",
+        );
+      }
+      let createdBlob = false;
+      try {
+        await link(tempPath, blobPath);
+        createdBlob = true;
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code !== "EEXIST") {
+          await unlink(tempPath).catch(() => undefined);
+          throw cause;
+        }
+        const existing = await lstat(blobPath);
+        if (
+          !existing.isFile() ||
+          existing.isSymbolicLink() ||
+          existing.size !== size
+        ) {
+          await unlink(tempPath).catch(() => undefined);
+          throw unavailable(409, "A conflicting managed blob already exists");
+        }
+        const existingHash = createHash("sha256");
+        for await (const chunk of createReadStream(blobPath))
+          existingHash.update(chunk);
+        if (existingHash.digest("hex") !== sha256) {
+          await unlink(tempPath).catch(() => undefined);
+          throw unavailable(409, "A conflicting managed blob already exists");
+        }
+      }
+      await unlink(tempPath).catch(() => undefined);
+      try {
+        transaction(state.db, () => {
+          state.db
+            .prepare(
+              `INSERT INTO attachment_blob(sha256,size,mime,stored_rel,created_at,trashed_at)
+             VALUES(?,?,?,?,?,NULL) ON CONFLICT(sha256) DO UPDATE SET trashed_at=NULL`,
+            )
+            .run(
+              sha256,
+              size,
+              attachment.mime ?? "application/octet-stream",
+              storedRel,
+              now,
+            );
+          state.db
+            .prepare(
+              `INSERT INTO attachment(id,owner_nid,mode,blob_sha256,display_name,original_name,file_kind,mime,size,sha256,availability,last_verified_at,created_at)
+             VALUES(?,?,'managed',?,?,?,?,?,?,?,?,?,?)`,
+            )
+            .run(
+              randomUUID(),
+              attachment.owner_nid,
+              sha256,
+              name,
+              name,
+              ext.slice(1),
+              attachment.mime,
+              size,
+              sha256,
+              "ok",
+              now,
+              now,
+            );
+        });
+      } catch (cause) {
+        if (
+          createdBlob &&
+          !state.db
+            .prepare("SELECT sha256 FROM attachment_blob WHERE sha256=?")
+            .get(sha256)
+        )
+          await unlink(blobPath).catch(() => undefined);
+        if ((cause as { code?: string }).code === "SQLITE_CONSTRAINT_UNIQUE")
+          throw unavailable(409, "This copy is already attached to this item");
+        throw cause;
+      }
+      return state.db
+        .prepare(
+          `SELECT ${attachmentFields} FROM attachment WHERE owner_nid=? AND mode='managed' AND blob_sha256=?`,
+        )
+        .get(attachment.owner_nid, sha256);
+    },
+  );
+
   app.post(
     "/api/attachments/upload",
     { bodyLimit: config.attachments.maxUploadBytes + 64 * 1024 },

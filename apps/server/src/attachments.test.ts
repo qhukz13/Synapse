@@ -203,6 +203,59 @@ it("browses approved roots and serves a referenced file by id with ranges", asyn
   ).toContain("# Machine Learning");
 });
 
+it("copies a reference into managed storage without changing its source", async () => {
+  const { app, root } = await setup();
+  const headers = {
+    host: "127.0.0.1:4317",
+    origin: "http://127.0.0.1:4317",
+    "x-synapse": "1",
+    "content-type": "application/json",
+  };
+  const source = join(root, "vault", "15 - Notebooks", "calibration.csv");
+  const sourceBytes = await readFile(source);
+  const referenced = await app.app.inject({
+    method: "POST",
+    url: "/api/attachments",
+    headers,
+    payload: {
+      owner: "machine-learning",
+      mode: "reference",
+      rootId: "vault",
+      relPath: "15 - Notebooks/calibration.csv",
+    },
+  });
+  expect(referenced.statusCode).toBe(200);
+
+  const copied = await app.app.inject({
+    method: "POST",
+    url: `/api/attachments/${referenced.json().id}/copy`,
+    headers,
+    payload: {},
+  });
+  expect(copied.statusCode, copied.body).toBe(200);
+  expect(copied.json()).toMatchObject({
+    mode: "managed",
+    display_name: "calibration.csv",
+    size: sourceBytes.length,
+    sha256: createHash("sha256").update(sourceBytes).digest("hex"),
+  });
+  const content = await app.app.inject({
+    url: `/api/attachments/${copied.json().id}/content`,
+    headers,
+  });
+  expect(content.statusCode).toBe(200);
+  expect(content.body).toEqual(sourceBytes.toString());
+  expect(await readFile(source)).toEqual(sourceBytes);
+
+  const duplicate = await app.app.inject({
+    method: "POST",
+    url: `/api/attachments/${referenced.json().id}/copy`,
+    headers,
+    payload: {},
+  });
+  expect(duplicate.statusCode).toBe(409);
+});
+
 it("rejects unapproved roots and symlinked files without exposing them", async () => {
   const { app, root, outside } = await setup();
   await symlink(outside, join(root, "vault", "escaped"));

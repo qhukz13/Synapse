@@ -184,6 +184,17 @@ test("links and removes a reference attachment without deleting the vault file",
   const content = await page.request.get(contentHref!);
   expect(content.status()).toBe(200);
   expect(await content.text()).toContain("voltage,temperature");
+  await attachments
+    .getByRole("button", { name: `Copy ${filename} into Synapse` })
+    .click();
+  const managedCopy = attachments
+    .locator(".topic-attachment-list li")
+    .filter({ hasText: "Copy · csv · ok" });
+  await expect(managedCopy).toContainText(filename);
+  await expect(managedCopy).toContainText("Stored in Synapse application data");
+  page.once("dialog", (dialog) => dialog.accept());
+  await managedCopy.getByRole("button", { name: `Remove ${filename}` }).click();
+  await expect(managedCopy).toHaveCount(0);
   page.once("dialog", (dialog) => dialog.accept());
   await attachments.getByRole("button", { name: `Remove ${filename}` }).click();
   await expect(attachments.locator(".topic-attachment-list li")).toHaveCount(0);
@@ -241,6 +252,10 @@ test("finds and confirms a moved attachment reference", async ({
   await attachments
     .getByRole("button", { name: new RegExp(`^${filename} ·`) })
     .click();
+  const linked = attachments
+    .locator(".topic-attachment-list li")
+    .filter({ hasText: filename });
+  await expect(linked).toContainText("Reference · csv · ok");
   const oldPath = join(vault, "15 - Notebooks", filename);
   const movedPath = join(vault, "15 - Notebooks", movedFilename);
   await rename(oldPath, movedPath);

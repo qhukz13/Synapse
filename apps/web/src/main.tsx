@@ -2382,6 +2382,7 @@ function TopicAttachments({ owner }: { owner: string }) {
   const [path, setPath] = useState("");
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [copyingId, setCopyingId] = useState("");
   const [relinkId, setRelinkId] = useState("");
   const candidates = useQuery<RelinkCandidate[]>({
     queryKey: ["attachment-relink-candidates", relinkId],
@@ -2447,6 +2448,34 @@ function TopicAttachments({ owner }: { owner: string }) {
           ? cause.message
           : "Could not remove this attachment.",
       );
+    }
+  };
+  const copyReference = async (attachment: AttachmentRow) => {
+    setCopyingId(attachment.id);
+    setError("");
+    try {
+      const response = await fetch(
+        `/api/attachments/${encodeURIComponent(attachment.id)}/copy`,
+        {
+          method: "POST",
+          headers: { "x-synapse": "1", "content-type": "application/json" },
+          body: "{}",
+        },
+      );
+      const result = await response.json();
+      if (!response.ok)
+        throw Error(result.message ?? "Could not copy this file into Synapse.");
+      await client.invalidateQueries({
+        queryKey: [`attachments?owner=${encodeURIComponent(owner)}`],
+      });
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not copy this file into Synapse.",
+      );
+    } finally {
+      setCopyingId("");
     }
   };
   const upload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -2563,6 +2592,17 @@ function TopicAttachments({ owner }: { owner: string }) {
                       onClick={() => setRelinkId(attachment.id)}
                     >
                       Find it
+                    </button>
+                  )}
+                {attachment.mode === "reference" &&
+                  attachment.availability !== "missing" && (
+                    <button
+                      type="button"
+                      aria-label={`Copy ${attachment.display_name} into Synapse`}
+                      disabled={copyingId === attachment.id}
+                      onClick={() => void copyReference(attachment)}
+                    >
+                      {copyingId === attachment.id ? "Copying…" : "Copy"}
                     </button>
                   )}
                 <button
