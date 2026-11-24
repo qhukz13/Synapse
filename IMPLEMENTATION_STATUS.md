@@ -47,7 +47,7 @@ The reader shows the active vault path and access mode. Each topic displays its 
 
 M8 still needs richer note navigation/preview and broader review of exercise behavior against the curriculum. M7 still needs broader AC12 restart/backup acceptance and fuller activity coverage for external edits. The dashboard still needs manual review panels and recommendation refinements. M9 still needs copy-from-reference, content-match suggestions, missing-file search and confirmed relink, delayed managed-blob move/purge, and safe PDF/notebook/image/code/CSV viewers. M10's interactive graph, M11 manual reviews and fuller analytics, then M12–M13 responsive, performance, accessibility and release acceptance remain.
 
-Recent M8 commits: `8e41d49` practice tracking, `d7611f3` note lifecycle, `ce029d4` Markdown excerpts, and `a2b498c` practice library, global draggable quick note and dashboard date-boundary fix. M9 reference attachment routing was committed as `40e77ed`; managed uploads are the current uncommitted work.
+Recent M8 commits: `8e41d49` practice tracking, `d7611f3` note lifecycle, `ce029d4` Markdown excerpts, and `a2b498c` practice library, global draggable quick note and dashboard date-boundary fix. M9 reference routing is `40e77ed`; managed import and deduplication is `2fddd97`. The working tree is clean.
 
 ## M6 repair and migration checkpoint
 
