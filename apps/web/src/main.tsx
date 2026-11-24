@@ -16,7 +16,12 @@ import {
   QueryClientProvider,
   useQuery,
 } from "@tanstack/react-query";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import type {
+  Edge as FlowEdge,
+  Node as FlowNode,
+  ReactFlowInstance,
+} from "@xyflow/react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   BookOpen,
   Compass,
@@ -100,6 +105,9 @@ function Layout() {
         </Link>
         <Link to="/roadmap/tree">
           <Compass /> Learning path
+        </Link>
+        <Link to="/roadmap/graph">
+          <Files /> Curriculum graph
         </Link>
         <Link to="/search">
           <Search />
@@ -1787,7 +1795,10 @@ function Curriculum() {
             <option value="domain">Domain</option>
           </select>
         </label>
-        <Link to="/roadmap/list">Open as list</Link>
+        <div className="roadmap-view-links">
+          <Link to="/roadmap/graph">Graph</Link>
+          <Link to="/roadmap/list">List</Link>
+        </div>
       </div>
       {groups.size === 0 && <p>No matching topics.</p>}
       {[...groups].map(([group, topics]) => (
@@ -1811,6 +1822,366 @@ function Curriculum() {
         </details>
       ))}
     </>
+  );
+}
+type RoadmapNodeInfo = {
+  slug: string;
+  title: string;
+  domain: string;
+  stage: number | null;
+  status: string;
+  missing?: boolean;
+};
+function RoadmapGraph() {
+  const result = summary();
+  const [filter, setFilter] = useState("");
+  const [domain, setDomain] = useState("");
+  const [status, setStatus] = useState("");
+  const [selected, setSelected] = useState("");
+  const [flowNodes, setFlowNodes] = useState<FlowNode[]>([]);
+  const [flowEdges, setFlowEdges] = useState<FlowEdge[]>([]);
+  const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(
+    null,
+  );
+  const [flowLibrary, setFlowLibrary] = useState<
+    typeof import("@xyflow/react") | null
+  >(null);
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([
+      import("@xyflow/react"),
+      import("@xyflow/react/dist/style.css"),
+    ]).then(([library]) => {
+      if (!cancelled) setFlowLibrary(library);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const topics = result.data?.topics ?? [];
+  const domains = useMemo(
+    () =>
+      [...new Set(topics.map((topic) => topic.domain).filter(Boolean))].sort(),
+    [topics],
+  );
+  const visible = useMemo(
+    () =>
+      topics.filter(
+        (topic) =>
+          (!filter ||
+            `${topic.title} ${topic.slug}`
+              .toLowerCase()
+              .includes(filter.toLowerCase())) &&
+          (!domain || topic.domain === domain) &&
+          (!status || topic.status.category === status),
+      ),
+    [topics, filter, domain, status],
+  );
+  const visibleIds = useMemo(
+    () => new Set(visible.map((topic) => topic.slug)),
+    [visible],
+  );
+  const edges = useMemo(
+    () =>
+      (result.data?.edges ?? []).filter(
+        (edge) =>
+          visibleIds.has(edge.from) &&
+          (visibleIds.has(edge.to) || edge.missing),
+      ),
+    [result.data?.edges, visibleIds],
+  );
+  useEffect(() => {
+    if (!result.data) return;
+    const stageNumbers = [
+      ...new Set(
+        visible
+          .map((topic) => topic.stage)
+          .filter((stage): stage is number => stage !== null),
+      ),
+    ].sort((a, b) => a - b);
+    const stageIndex = new Map(
+      stageNumbers.map((stage, index) => [stage, index]),
+    );
+    const rowByStage = new Map<number | null, number>();
+    const positions = new Map<string, { x: number; y: number }>();
+    const ordered = [...visible].sort(
+      (a, b) =>
+        (a.stage ?? Number.MAX_SAFE_INTEGER) -
+          (b.stage ?? Number.MAX_SAFE_INTEGER) ||
+        (a.position?.index ?? Number.MAX_SAFE_INTEGER) -
+          (b.position?.index ?? Number.MAX_SAFE_INTEGER) ||
+        a.title.localeCompare(b.title),
+    );
+    for (const topic of ordered) {
+      const row = rowByStage.get(topic.stage) ?? 0;
+      rowByStage.set(topic.stage, row + 1);
+      const column =
+        topic.stage === null
+          ? stageNumbers.length
+          : (stageIndex.get(topic.stage) ?? 0);
+      positions.set(topic.slug, { x: column * 330, y: row * 96 });
+    }
+    const missing = [
+      ...new Set(edges.filter((edge) => edge.missing).map((edge) => edge.to)),
+    ];
+    missing.forEach((slug, index) =>
+      positions.set(`missing:${slug}`, {
+        x: (stageNumbers.length + 1) * 330,
+        y: index * 96,
+      }),
+    );
+    setFlowNodes([
+      ...ordered.map((topic) => {
+        const nodeInfo: RoadmapNodeInfo = {
+          slug: topic.slug,
+          title: topic.title,
+          domain: topic.domain || "Unspecified domain",
+          stage: topic.stage,
+          status: topic.status.value || "Not tracked",
+        };
+        const active = selected === topic.slug;
+        const completed = topic.status.category === "completed";
+        const inProgress = topic.status.category === "in_progress";
+        return {
+          id: topic.slug,
+          width: 224,
+          height: 76,
+          position: positions.get(topic.slug)!,
+          data: {
+            label: `${topic.title}\n${nodeInfo.domain} · ${nodeInfo.status}`,
+            ...nodeInfo,
+          },
+          style: {
+            width: 224,
+            minHeight: 76,
+            whiteSpace: "pre-line",
+            borderRadius: 10,
+            border: active
+              ? "2px solid #b8a6ff"
+              : inProgress
+                ? "1px solid #7868b0"
+                : "1px solid #41465a",
+            background: completed
+              ? "#202d2a"
+              : inProgress
+                ? "#292538"
+                : "#20222b",
+            color: "#eeeef2",
+            boxShadow: active ? "0 0 0 3px #8b79ff33" : "0 5px 18px #0003",
+            fontSize: 12,
+            textAlign: "left" as const,
+            padding: 12,
+          },
+        };
+      }),
+      ...missing.map((slug) => ({
+        id: `missing:${slug}`,
+        width: 224,
+        height: 64,
+        position: positions.get(`missing:${slug}`)!,
+        data: {
+          label: `Missing · ${slug}`,
+          slug,
+          title: slug,
+          domain: "Missing prerequisite",
+          stage: null,
+          status: "Not found",
+          missing: true,
+        },
+        className: "roadmap-missing-node",
+        style: {
+          width: 224,
+          minHeight: 64,
+          borderRadius: 10,
+          border: "1px dashed #cb7c6b",
+          background: "#291e20",
+          color: "#eeeef2",
+          fontSize: 12,
+        },
+      })),
+    ]);
+    setFlowEdges(
+      edges.map((edge, index) => {
+        const target = edge.missing ? `missing:${edge.to}` : edge.to;
+        const relevant = edge.from === selected || target === selected;
+        return {
+          id: `${edge.from}->${edge.to}:${index}`,
+          source: edge.from,
+          target,
+          type: "smoothstep",
+          animated: relevant,
+          style: {
+            stroke: relevant ? "#b8a6ff" : "#555b70",
+            strokeWidth: relevant ? 2.5 : 1.2,
+          },
+        };
+      }),
+    );
+  }, [result.data, visible, edges, selected, topics]);
+  useEffect(() => {
+    if (!flowInstance || flowNodes.length === 0) return;
+    const frame = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        void flowInstance.fitView({ padding: 0.16, duration: 180 });
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [flowInstance, flowNodes.length, filter, domain, status]);
+  const selectedTopic = topics.find((topic) => topic.slug === selected);
+  const selectedStatus = result.data?.prerequisites[selected];
+  if (!result.data)
+    return (
+      <p role="status">
+        {result.error?.message ?? "Building curriculum graph…"}
+      </p>
+    );
+  if (!flowLibrary)
+    return <p role="status">Loading interactive graph tools…</p>;
+  const { ReactFlow: FlowCanvas, Background, MiniMap, Controls } = flowLibrary;
+  return (
+    <section className="roadmap-graph-page">
+      <header>
+        <h1>Curriculum graph</h1>
+        <p>
+          Prerequisites connect topics to the concepts they build on. They are
+          guidance, not locks.
+        </p>
+        <div className="roadmap-view-links">
+          <Link to="/roadmap/tree">Tree</Link>
+          <Link to="/roadmap/list">List</Link>
+        </div>
+      </header>
+      <div className="roadmap-graph-filters">
+        <label>
+          Search topics
+          <input
+            aria-label="Search graph topics"
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            placeholder="Search title or slug"
+          />
+        </label>
+        <label>
+          Domain
+          <select
+            aria-label="Filter graph by domain"
+            value={domain}
+            onChange={(event) => setDomain(event.target.value)}
+          >
+            <option value="">All domains</option>
+            {domains.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Status
+          <select
+            aria-label="Filter graph by status"
+            value={status}
+            onChange={(event) => setStatus(event.target.value)}
+          >
+            <option value="">All statuses</option>
+            <option value="not-started">Not started</option>
+            <option value="in-progress">In progress</option>
+            <option value="completed">Completed</option>
+          </select>
+        </label>
+        <small>
+          {visible.length} topics · {edges.length} prerequisite links
+        </small>
+      </div>
+      <div className="roadmap-graph-workspace">
+        <div
+          className="roadmap-graph-canvas"
+          aria-label="Interactive curriculum prerequisite graph"
+        >
+          <FlowCanvas
+            key={`${filter}:${domain}:${status}:${flowNodes.length}`}
+            nodes={flowNodes}
+            edges={flowEdges}
+            onNodeClick={(_event, node) =>
+              setSelected(String(node.data.slug ?? ""))
+            }
+            onInit={setFlowInstance}
+            minZoom={0.08}
+            maxZoom={1.6}
+            nodesConnectable={false}
+            elementsSelectable
+            proOptions={{ hideAttribution: true }}
+          >
+            <Background color="#45495a" gap={24} size={1} />
+            <MiniMap
+              pannable
+              zoomable
+              nodeColor={(node) => String(node.style?.background ?? "#292b35")}
+            />
+            <Controls />
+          </FlowCanvas>
+        </div>
+        {selectedTopic ? (
+          <aside className="roadmap-graph-detail">
+            <button
+              type="button"
+              className="quiet"
+              onClick={() => setSelected("")}
+            >
+              Close
+            </button>
+            <small>
+              {selectedTopic.domain || "Unspecified domain"} ·{" "}
+              {selectedTopic.status.value || "Not tracked"}
+            </small>
+            <h2>{selectedTopic.title}</h2>
+            <p>{selectedTopic.about || selectedTopic.path}</p>
+            <h3>Prerequisites</h3>
+            {!selectedStatus?.met.length &&
+              !selectedStatus?.unmet.length &&
+              !selectedStatus?.missing.length && (
+                <p>No prerequisites recorded.</p>
+              )}
+            <ul>
+              {[
+                ...(selectedStatus?.met ?? []),
+                ...(selectedStatus?.unmet ?? []),
+                ...(selectedStatus?.missing ?? []),
+              ].map((slug) => {
+                const prerequisite = topics.find(
+                  (topic) => topic.slug === slug,
+                );
+                return (
+                  <li key={slug}>
+                    {prerequisite ? (
+                      <Link to="/t/$slug" params={{ slug }}>
+                        {prerequisite.title}
+                      </Link>
+                    ) : (
+                      <span className="missing-prerequisite">
+                        Missing · {slug}
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+            <Link
+              className="button-link"
+              to="/t/$slug"
+              params={{ slug: selectedTopic.slug }}
+            >
+              Open topic
+            </Link>
+          </aside>
+        ) : (
+          <aside className="roadmap-graph-hint">
+            Select a topic to highlight its prerequisite connections and inspect
+            its path.
+          </aside>
+        )}
+      </div>
+    </section>
   );
 }
 function TopicList() {
@@ -4355,6 +4726,11 @@ const router = createRouter({
       getParentRoute: () => root,
       path: "/roadmap/tree",
       component: Curriculum,
+    }),
+    createRoute({
+      getParentRoute: () => root,
+      path: "/roadmap/graph",
+      component: RoadmapGraph,
     }),
     createRoute({
       getParentRoute: () => root,

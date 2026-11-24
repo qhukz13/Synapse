@@ -281,6 +281,45 @@ test("finds and confirms a moved attachment reference", async ({
   await expect(relinkPanel.locator(".topic-attachment-list li")).toHaveCount(0);
 });
 
+test("explores the dependency graph and opens a selected curriculum topic", async ({
+  page,
+}) => {
+  await page.goto("/roadmap/graph");
+  await expect(
+    page.getByRole("heading", { name: "Curriculum graph" }),
+  ).toBeVisible();
+  const canvas = page.locator(".roadmap-graph-canvas");
+  await expect(canvas.locator(".react-flow__node").first()).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(canvas.locator(".react-flow__edge").first()).toHaveAttribute(
+    "aria-label",
+    /^Edge from /,
+  );
+  const search = page.getByRole("textbox", { name: "Search graph topics" });
+  await search.fill("Linear Regression");
+  await expect(
+    canvas
+      .locator(".react-flow__node")
+      .filter({ hasText: "Linear Regression" })
+      .first(),
+  ).toBeVisible();
+  await search.fill("");
+  const regression = canvas
+    .locator(".react-flow__node")
+    .filter({ hasText: "Linear Regression" })
+    .first();
+  await regression.click();
+  await expect(
+    page.getByRole("heading", { name: "Linear Regression" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Prerequisites" }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Open topic" }).click();
+  await expect(page).toHaveURL(/\/t\/linear-regression$/);
+});
+
 test("quick-captures, moves, renames and trashes a personal note", async ({
   page,
 }, testInfo) => {
