@@ -2721,6 +2721,131 @@ type AttachmentRow = {
   size: number | null;
   availability: string;
 };
+function attachmentPreviewKind(name: string) {
+  const extension = name.split(".").at(-1)?.toLowerCase() ?? "";
+  if (["png", "jpg", "jpeg", "webp", "gif"].includes(extension)) return "image";
+  if (extension === "pdf") return "pdf";
+  if (
+    [
+      "txt",
+      "md",
+      "py",
+      "ts",
+      "tsx",
+      "js",
+      "jsx",
+      "sh",
+      "toml",
+      "yaml",
+      "yml",
+      "sql",
+      "c",
+      "cpp",
+      "rs",
+      "go",
+      "java",
+      "r",
+      "jl",
+      "csv",
+      "tsv",
+      "json",
+      "ipynb",
+    ].includes(extension)
+  )
+    return "text";
+  return null;
+}
+function AttachmentPreview({
+  attachment,
+  onClose,
+}: {
+  attachment: AttachmentRow;
+  onClose: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const kind = attachmentPreviewKind(attachment.display_name);
+  const [text, setText] = useState("");
+  const [error, setError] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    const element = dialog.current;
+    if (!element) return;
+    element.showModal();
+    return () => element.close();
+  }, []);
+  useEffect(() => {
+    if (kind !== "text") return;
+    if (attachment.size !== null && attachment.size > 2 * 1024 * 1024) {
+      setError(
+        "This file is larger than the 2 MiB text preview limit. Open it separately instead.",
+      );
+      return;
+    }
+    const controller = new AbortController();
+    void fetch(
+      `/api/attachments/${encodeURIComponent(attachment.id)}/content`,
+      { signal: controller.signal },
+    )
+      .then(async (response) => {
+        if (!response.ok)
+          throw Error("Could not load this attachment preview.");
+        setText(await response.text());
+        setLoaded(true);
+      })
+      .catch((cause: unknown) => {
+        if (!controller.signal.aborted)
+          setError(
+            cause instanceof Error
+              ? cause.message
+              : "Could not load this attachment preview.",
+          );
+      });
+    return () => controller.abort();
+  }, [attachment.id, attachment.size, kind]);
+  return (
+    <dialog
+      ref={dialog}
+      className="attachment-preview-dialog"
+      aria-label={`Preview ${attachment.display_name}`}
+      onClose={onClose}
+      onCancel={onClose}
+    >
+      <header>
+        <div>
+          <strong>{attachment.display_name}</strong>
+          <small>{attachment.file_kind} preview</small>
+        </div>
+        <button type="button" onClick={() => dialog.current?.close()}>
+          Close
+        </button>
+      </header>
+      <div className="attachment-preview-content">
+        {error ? (
+          <p role="alert">{error}</p>
+        ) : kind === "image" ? (
+          <img
+            src={`/api/attachments/${encodeURIComponent(attachment.id)}/content`}
+            alt={attachment.display_name}
+          />
+        ) : kind === "pdf" ? (
+          <iframe
+            title={`PDF preview: ${attachment.display_name}`}
+            sandbox="allow-scripts"
+            src={`/api/attachments/${encodeURIComponent(attachment.id)}/content`}
+          />
+        ) : kind === "text" ? (
+          loaded ? (
+            <pre>{text || "(Empty file)"}</pre>
+          ) : (
+            <p role="status">Loading preview…</p>
+          )
+        ) : (
+          <p>This file type does not have an in-app preview.</p>
+        )}
+      </div>
+    </dialog>
+  );
+}
 type AttachmentRoot = {
   id: string;
   kind: "reference" | "managed";
@@ -2755,6 +2880,7 @@ function TopicAttachments({ owner }: { owner: string }) {
   const [uploading, setUploading] = useState(false);
   const [copyingId, setCopyingId] = useState("");
   const [relinkId, setRelinkId] = useState("");
+  const [preview, setPreview] = useState<AttachmentRow | null>(null);
   const candidates = useQuery<RelinkCandidate[]>({
     queryKey: ["attachment-relink-candidates", relinkId],
     enabled: !!relinkId,
@@ -2955,6 +3081,16 @@ function TopicAttachments({ owner }: { owner: string }) {
                     <ExternalLink size={15} />
                   </a>
                 )}
+                {attachment.availability !== "missing" &&
+                  attachmentPreviewKind(attachment.display_name) && (
+                    <button
+                      type="button"
+                      aria-label={`Preview ${attachment.display_name}`}
+                      onClick={() => setPreview(attachment)}
+                    >
+                      Preview
+                    </button>
+                  )}
                 {attachment.mode === "reference" &&
                   attachment.availability === "missing" && (
                     <button
@@ -3091,6 +3227,12 @@ function TopicAttachments({ owner }: { owner: string }) {
         />
       </label>
       {error && <p role="alert">{error}</p>}
+      {preview && (
+        <AttachmentPreview
+          attachment={preview}
+          onClose={() => setPreview(null)}
+        />
+      )}
     </details>
   );
 }

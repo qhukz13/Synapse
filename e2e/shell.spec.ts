@@ -185,6 +185,12 @@ test("links and removes a reference attachment without deleting the vault file",
   expect(content.status()).toBe(200);
   expect(await content.text()).toContain("voltage,temperature");
   await attachments
+    .getByRole("button", { name: `Preview ${filename}` })
+    .click();
+  const preview = page.getByRole("dialog", { name: `Preview ${filename}` });
+  await expect(preview).toContainText("voltage,temperature");
+  await preview.getByRole("button", { name: "Close" }).click();
+  await attachments
     .getByRole("button", { name: `Copy ${filename} into Synapse` })
     .click();
   const managedCopy = attachments
