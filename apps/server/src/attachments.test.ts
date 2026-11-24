@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { afterEach, expect, it } from "vitest";
 import { configFrom, projectDir } from "./config";
 import { createApp } from "./app";
+import { cleanupManagedAttachments } from "./attachments-maintenance";
 
 const running: { close: () => Promise<void>; root: string }[] = [];
 async function setup(
@@ -457,9 +458,125 @@ it("streams managed uploads, deduplicates content and retains shared blobs", asy
     .prepare("SELECT stored_rel,trashed_at FROM attachment_blob WHERE sha256=?")
     .get(first.json().sha256) as { stored_rel: string; trashed_at: number };
   expect(blob.trashed_at).toBeGreaterThan(0);
+  await cleanupManagedAttachments(app.config, app.state);
+  const moved = app.state.db
+    .prepare("SELECT stored_rel,trashed_at FROM attachment_blob WHERE sha256=?")
+    .get(first.json().sha256) as { stored_rel: string; trashed_at: number };
+  expect(moved.stored_rel).toBe(
+    join("attachments", "trash", first.json().sha256),
+  );
+  expect(await readFile(join(root, "state", moved.stored_rel), "utf8")).toBe(
+    content,
+  );
+  app.state.db
+    .prepare("UPDATE attachment_blob SET trashed_at=? WHERE sha256=?")
+    .run(Date.now() - 31 * 24 * 60 * 60 * 1000, first.json().sha256);
+  await cleanupManagedAttachments(app.config, app.state);
+  expect(
+    app.state.db
+      .prepare("SELECT sha256 FROM attachment_blob WHERE sha256=?")
+      .get(first.json().sha256),
+  ).toBeUndefined();
+  await expect(
+    readFile(join(root, "state", moved.stored_rel)),
+  ).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+it("restores a trashed blob when content is attached again", async () => {
+  const { app, root } = await setup();
+  const boundary = "reattach-fixture-boundary";
+  const content = "reattached bytes";
+  const headers = {
+    host: "127.0.0.1:4317",
+    origin: "http://127.0.0.1:4317",
+    "x-synapse": "1",
+    "content-type": `multipart/form-data; boundary=${boundary}`,
+  };
+  const upload = () =>
+    app.app.inject({
+      method: "POST",
+      url: "/api/attachments/upload?owner=machine-learning",
+      headers,
+      payload: multipart("reattach.txt", content, boundary),
+    });
+  const first = await upload();
+  const remove = await app.app.inject({
+    method: "DELETE",
+    url: `/api/attachments/${first.json().id}`,
+    headers: { ...headers, "content-type": "application/json" },
+    payload: {},
+  });
+  expect(remove.statusCode).toBe(204);
+  await cleanupManagedAttachments(app.config, app.state);
+  const trashRel = join("attachments", "trash", first.json().sha256);
+  await readFile(join(root, "state", trashRel));
+  const second = await upload();
+  expect(second.statusCode).toBe(200);
+  await cleanupManagedAttachments(app.config, app.state);
+  const blob = app.state.db
+    .prepare("SELECT stored_rel,trashed_at FROM attachment_blob WHERE sha256=?")
+    .get(first.json().sha256) as {
+    stored_rel: string;
+    trashed_at: number | null;
+  };
+  expect(blob.stored_rel).toBe(
+    join(
+      "attachments",
+      "blobs",
+      first.json().sha256.slice(0, 2),
+      first.json().sha256.slice(2, 4),
+      first.json().sha256,
+    ),
+  );
+  expect(blob.trashed_at).toBeNull();
   expect(await readFile(join(root, "state", blob.stored_rel), "utf8")).toBe(
     content,
   );
+  await expect(readFile(join(root, "state", trashRel))).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+});
+
+it("ignores unsafe database paths during managed cleanup", async () => {
+  const { app, root } = await setup();
+  const boundary = "unsafe-path-fixture-boundary";
+  const headers = {
+    host: "127.0.0.1:4317",
+    origin: "http://127.0.0.1:4317",
+    "x-synapse": "1",
+    "content-type": `multipart/form-data; boundary=${boundary}`,
+  };
+  const uploaded = await app.app.inject({
+    method: "POST",
+    url: "/api/attachments/upload?owner=machine-learning",
+    headers,
+    payload: multipart("guard.txt", "managed bytes", boundary),
+  });
+  const removed = await app.app.inject({
+    method: "DELETE",
+    url: `/api/attachments/${uploaded.json().id}`,
+    headers: { ...headers, "content-type": "application/json" },
+    payload: {},
+  });
+  expect(removed.statusCode).toBe(204);
+  const sentinel = join(root, "outside-sentinel");
+  await writeFile(sentinel, "preserve me");
+  app.state.db
+    .prepare(
+      "UPDATE attachment_blob SET stored_rel=?,trashed_at=? WHERE sha256=?",
+    )
+    .run(
+      "../../outside-sentinel",
+      Date.now() - 31 * 24 * 60 * 60 * 1000,
+      uploaded.json().sha256,
+    );
+  await cleanupManagedAttachments(app.config, app.state);
+  expect(await readFile(sentinel, "utf8")).toBe("preserve me");
+  expect(
+    app.state.db
+      .prepare("SELECT sha256 FROM attachment_blob WHERE sha256=?")
+      .get(uploaded.json().sha256),
+  ).toBeDefined();
 });
 
 it("cleans up files rejected by the configured upload size limit", async () => {

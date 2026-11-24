@@ -35,6 +35,11 @@ export function registerAttachments({
   topic,
   nid,
 }: Context) {
+  app.addHook("onReady", async () => {
+    const { cleanupManagedAttachments } =
+      await import("../attachments-maintenance");
+    await cleanupManagedAttachments(config, state);
+  });
   const roots = () => [
     { id: "vault", path: config.vaultPath, kind: "reference" as const },
     ...config.attachments.extraRoots.map((root) => ({
@@ -564,7 +569,7 @@ export function registerAttachments({
           state.db
             .prepare(
               `INSERT INTO attachment_blob(sha256,size,mime,stored_rel,created_at,trashed_at)
-             VALUES(?,?,?,?,?,NULL) ON CONFLICT(sha256) DO UPDATE SET trashed_at=NULL`,
+             VALUES(?,?,?,?,?,NULL) ON CONFLICT(sha256) DO UPDATE SET stored_rel=excluded.stored_rel,trashed_at=NULL`,
             )
             .run(
               sha256,
@@ -732,7 +737,7 @@ export function registerAttachments({
             state.db
               .prepare(
                 `INSERT INTO attachment_blob(sha256,size,mime,stored_rel,created_at,trashed_at)
-               VALUES(?,?,?,?,?,NULL) ON CONFLICT(sha256) DO UPDATE SET trashed_at=NULL`,
+               VALUES(?,?,?,?,?,NULL) ON CONFLICT(sha256) DO UPDATE SET stored_rel=excluded.stored_rel,trashed_at=NULL`,
               )
               .run(sha256, size, upload.mimetype, storedRel, now);
             state.db
